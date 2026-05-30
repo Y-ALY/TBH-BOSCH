@@ -280,24 +280,101 @@
 </div>
 
 <script>
-
-const menuBtn =
-document.getElementById("menuToggle");
-
-const sidebar =
-document.getElementById("sidebar");
-
-const main =
-document.querySelector(".main");
+// Keep the existing sidebar toggle code
+const menuBtn = document.getElementById("menuToggle");
+const sidebar = document.getElementById("sidebar");
+const main = document.querySelector(".main");
 
 menuBtn.addEventListener("click", () => {
-
     sidebar.classList.toggle("collapsed");
-
     main.classList.toggle("expanded");
-
 });
 
+
+// --- Account Menu Toggle ---
+function toggleAccountMenu() {
+    const menu = document.getElementById("accountMenu");
+    menu.classList.toggle("show-menu");
+}
+
+// Close the menu if the user clicks anywhere else on the screen
+document.addEventListener("click", function(event) {
+    const accountBtn = document.querySelector(".account-btn");
+    const accountMenu = document.getElementById("accountMenu");
+    
+    // If the click is outside the button and the menu, hide the menu
+    if (!accountBtn.contains(event.target) && !accountMenu.contains(event.target)) {
+        accountMenu.classList.remove("show-menu");
+    }
+});
+
+// --- NEW WIRING CODE ---
+// When the page loads, fetch the real data from the Python API
+document.addEventListener("DOMContentLoaded", async () => {
+    // This matches the ID hardcoded in the HTML profile section
+    const employeeId = "BX-21842"; 
+    
+    try {
+        // Call the endpoint you built in main.py
+        const response = await fetch(`/api/employee/files/${employeeId}`);
+        const data = await response.json();
+        
+        // Find the container where the cards live
+        const alertsGrid = document.querySelector('.alerts-grid');
+        
+        // Clear out the hardcoded dummy HTML cards
+        alertsGrid.innerHTML = ""; 
+        
+        // If the database is clean, show a success message
+        if (!data.findings || data.findings.length === 0) {
+            alertsGrid.innerHTML = "<p style='color: #666;'>No compliance violations found. Great job!</p>";
+            return;
+        }
+        
+        // Loop through the real database findings and generate the UI cards
+        data.findings.forEach(finding => {
+            const card = document.createElement('div');
+            card.className = 'glass-card alert-card';
+            
+            card.innerHTML = `
+                <h3 style="word-break: break-all;">${finding.file_name}</h3>
+                <p>${finding.category}</p>
+                <div style="margin-top: 10px; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 6px; font-family: monospace;">
+                    ${finding.flagged_snippet}
+                </div>
+                <button 
+                    onclick="handleDelete(${finding.finding_id})"
+                    style="margin-top: 15px; padding: 6px 12px; background: #ea0016; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                    Resolve Issue
+                </button>
+            `;
+            alertsGrid.appendChild(card);
+        });
+        
+    } catch (error) {
+        console.error("Error fetching data from API:", error);
+    }
+});
+
+// Wiring up the 'Resolve' button to your /api/employee/action endpoint
+async function handleDelete(findingId) {
+    if(!confirm("Are you sure you want to mark this issue as resolved?")) return;
+    
+    try {
+        const response = await fetch('/api/employee/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file_id: findingId, action: "delete" })
+        });
+        
+        if(response.ok) {
+            // Reload the page to refresh the grid
+            window.location.reload(); 
+        }
+    } catch (error) {
+        alert("Failed to resolve issue.");
+    }
+}
 </script>
 
 </body>

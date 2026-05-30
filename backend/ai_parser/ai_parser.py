@@ -1,18 +1,11 @@
-"""Core AI Parser — the central orchestrator.
-
-Reads scanner/regex findings, sends them to AI (live or mock), and returns
-structured GDPR classifications for the dashboard and review queue.
-
-Modes:
-- mock:  Uses local heuristics — no API call, no cost.  Good for demos and tests.
-- live:  Calls OpenRouter with real prompts.  Requires OPENROUTER_API_KEY.
-"""
-
+"""Core AI Parser — the central orchestrator."""
 from __future__ import annotations
 
 import logging
 import os
 import re
+import hashlib # NEW: For generating cache keys
+import concurrent.futures # NEW: For parallel API requests
 from typing import Any
 
 from .openrouter_client import OpenRouterClient
@@ -29,7 +22,6 @@ from .schemas import (
 
 logger = logging.getLogger(__name__)
 
-
 class AIParser:
     """GDPR classification engine that enriches scanner findings with AI metadata."""
 
@@ -43,19 +35,21 @@ class AIParser:
             raise ValueError(f"AI_PARSER_MODE must be 'mock' or 'live', got '{self.mode}'")
 
         self._openrouter = openrouter_client or OpenRouterClient()
+        
+        # FIX 2: Initialize an in-memory cache
+        self._snippet_cache: dict[str, ClassificationResult] = {} 
+        
         logger.info("AIParser initialized in '%s' mode", self.mode)
+
+    def _get_cache_key(self, finding: ScannerFinding) -> str:
+        """Generates a unique fingerprint for a finding to bypass the LLM."""
+        fingerprint = f"{finding.regex_type}::{finding.snippet}"
+        return hashlib.md5(fingerprint.encode('utf-8')).hexdigest()
 
     # ── Public API ──────────────────────────────────────────────────────────
 
     def classify(self, finding: ScannerFinding | dict[str, Any]) -> ClassificationResult:
-        """Classify a single scanner finding.
-
-        Args:
-            finding: A ScannerFinding model or a plain dict matching its shape.
-
-        Returns:
-            ClassificationResult with AI-enriched metadata.
-        """
+        # ... (Keep your existing classify method exactly as it is) ...
         if isinstance(finding, dict):
             finding = ScannerFinding(**finding)
 
@@ -65,15 +59,61 @@ class AIParser:
             return self._classify_live(finding)
 
     def classify_batch(self, findings: list[ScannerFinding | dict[str, Any]]) -> list[ClassificationResult]:
-        """Classify a batch of findings.  Each is processed independently."""
+        """Classify a batch of findings concurrently with caching and pre-filtering."""
+        
         results: list[ClassificationResult] = []
+        unprocessed_queue: list[tuple[str, ScannerFinding]] = []
+
+        # FIX 3: Short-circuit/Pre-filter
+        # Only process findings that actually have a regex hit and snippet
+        valid_findings = []
         for f in findings:
+            finding_obj = f if isinstance(f, ScannerFinding) else ScannerFinding(**f)
+            if finding_obj.regex_type and finding_obj.snippet:
+                valid_findings.append(finding_obj)
+
+        # FIX 2: Cache Evaluation
+        for finding in valid_findings:
+            cache_key = self._get_cache_key(finding)
+            
+            if cache_key in self._snippet_cache:
+                # Cache Hit! Copy the cached classification but assign it to the current file
+                logger.debug(f"Cache hit for {finding.regex_type} snippet.")
+                cached_res = self._snippet_cache[cache_key].model_copy()
+                cached_res.file_id = finding.file_id
+                cached_res.file_name = finding.file_name
+                results.append(cached_res)
+            else:
+                # Cache Miss! Add to the queue for the LLM
+                unprocessed_queue.append((cache_key, finding))
+
+        # FIX 1: Concurrency 
+        # Fire off all unprocessed LLM requests in parallel (up to 10 at a time)
+        def _process_single(item):
+            key, find_obj = item
             try:
-                results.append(self.classify(f))
+                res = self.classify(find_obj)
+                return key, res
             except Exception:
-                logger.exception("Failed to classify finding: %s", f)
-                results.append(self._emergency_fallback(f))
+                logger.exception("Failed to classify finding: %s", find_obj)
+                return key, self._emergency_fallback(find_obj)
+
+        if unprocessed_queue:
+            logger.info(f"Sending {len(unprocessed_queue)} new findings to AI concurrently...")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                # Submit all tasks
+                futures = [executor.submit(_process_single, item) for item in unprocessed_queue]
+                
+                # Gather results as they complete
+                for future in concurrent.futures.as_completed(futures):
+                    key, classification = future.result()
+                    # Store in cache for next time
+                    self._snippet_cache[key] = classification
+                    results.append(classification)
+
         return results
+
+    # ... (Keep all your other existing methods like _classify_mock, _classify_live, etc. exactly as they are) ...
 
     # ── Mock mode ───────────────────────────────────────────────────────────
 
