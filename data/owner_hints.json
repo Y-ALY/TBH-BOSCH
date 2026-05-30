@@ -1,0 +1,24 @@
+{
+  "Supplier_Onboarding_Example_A.pdf": {
+    "name": "Markus Weber",
+    "email": "markus.weber@bosch.com",
+    "department": "Procurement",
+    "site_owner": "Dr. Schmidt",
+    "master_of_data": "CDO Office"
+  },
+  "Expense_Report_March.pdf": {
+    "name": "Anna Schmidt",
+    "email": "anna.schmidt@bosch.com",
+    "department": "Engineering",
+    "site_owner": "Dr. Hans Mueller",
+    "master_of_data": "CDO Office"
+  },
+  "IT_Access_Request_Form.pdf": {
+    "site_owner": "Dr. Hans Mueller",
+    "master_of_data": "IT Security"
+  },
+  "Incident_Report_2026_04.pdf": {
+    "site_owner": "Dr. Hans Mueller",
+    "master_of_data": "CDO Office"
+  }
+}
