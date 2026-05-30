@@ -1,0 +1,25 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual env
+venv/
+.venv/
+
+# Generated data (scan outputs, state, databases)
+*.db
+data/output/
+data/state/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
