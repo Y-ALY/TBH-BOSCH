@@ -1,0 +1,54 @@
+{
+  "findings": [
+    {
+      "file_id": "doc-001",
+      "file_name": "expense_report_march.pdf",
+      "document_type": "expense_report",
+      "page_number": 1,
+      "field": "Employee",
+      "snippet": "Employee: Sara Hoffmann (E-20491)",
+      "regex_type": "employee_id",
+      "regex_value": "E-20491"
+    },
+    {
+      "file_id": "doc-002",
+      "file_name": "supplier_onboarding.pdf",
+      "document_type": "supplier_onboarding",
+      "page_number": 1,
+      "field": "Contact",
+      "snippet": "Contact: procurement@nordic-components.example for inquiries.",
+      "regex_type": "email",
+      "regex_value": "procurement@nordic-components.example"
+    },
+    {
+      "file_id": "doc-003",
+      "file_name": "access_request.pdf",
+      "document_type": "access_approval",
+      "page_number": 2,
+      "field": "Signature",
+      "snippet": "Authorized by Signature: J. Keller",
+      "regex_type": "signature",
+      "regex_value": "J. Keller"
+    },
+    {
+      "file_id": "doc-004",
+      "file_name": "incident_log.txt",
+      "document_type": "incident_report",
+      "page_number": 1,
+      "field": "Description",
+      "snippet": "Description: A document containing personal data was mistakenly shared with the external vendor.",
+      "regex_type": "keyword_match",
+      "regex_value": "mistakenly shared"
+    },
+    {
+      "file_id": "doc-005",
+      "file_name": "hr_record.pdf",
+      "document_type": "hr_personnel_record",
+      "page_number": 1,
+      "field": "Bank Details",
+      "snippet": "Please deposit salary to IBAN: DE89 3704 0044 0532 0130 00",
+      "regex_type": "iban",
+      "regex_value": "DE89 3704 0044 0532 0130 00"
+    }
+  ]
+}

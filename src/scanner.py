@@ -143,6 +143,10 @@ def run_ai_scan(connector, ai_parser=None) -> ScanResult:
         full_text = "\n".join(p.text for p in doc.pages)
         regex_count = len([f for f in result.findings if f.file_id == doc.file_id])
 
+        # ── Gatekeeper: skip AI for confidently classified, clean docs ──
+        if doc.document_type != "unknown" and regex_count == 0:
+            continue
+
         # ── AI analysis ────────────────────────────────────────
         try:
             ai_result = ai_parser.parse(

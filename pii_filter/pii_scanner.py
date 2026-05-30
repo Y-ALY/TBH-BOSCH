@@ -193,8 +193,9 @@ class PIIScanner:
            a shorter nested match (e.g. a PHONE inside an IBAN)
            will always appear *after* the longer one and be discarded.
 
-        Complexity: O(N log N) where N = total raw matches across all
-        patterns – dominated by the sort step.
+        Complexity: O(N · D) where N = total raw matches and
+        D = number of digits in the maximum key value — dominated
+        by the radix sort step.
         """
         if not text:
             return []
@@ -231,6 +232,121 @@ class PIIScanner:
         # Already sorted by char_offset from _resolve_overlaps.
         return accepted
 
+    # ── Radix sort helper (stable counting sort per digit) ───
+    @staticmethod
+    def _radix_sort_candidates(
+        candidates: List[Tuple[int, int, PIIMatch]],
+    ) -> List[Tuple[int, int, PIIMatch]]:
+        """
+        Sort *candidates* using **LSD Radix Sort** (least-significant
+        digit first) with a stable counting-sort subroutine on each
+        digit position.
+
+        Sorting criteria (matching the original Timsort logic):
+
+        * **Primary key** – ``start`` index, ascending.
+        * **Secondary key** – span length ``(end - start)``,
+          **descending**.  Achieved by sorting on
+          ``max_span - span`` so that radix works on non-negative
+          integers only.
+
+        Because LSD radix processes the *least-significant key first*,
+        we sort by the secondary key (inverted span) first, then by
+        the primary key (start).  Stability guarantees the secondary
+        ordering is preserved within equal primary-key groups.
+
+        Args:
+            candidates: A list of ``(start, end, PIIMatch)`` tuples.
+
+        Returns:
+            A new list sorted by ``(start ASC, span DESC)``.
+        """
+        if len(candidates) <= 1:
+            return list(candidates)
+
+        # Pre-compute keys ───────────────────────────────────
+        max_span = max(e - s for s, e, _ in candidates)
+        max_start = max(c[0] for c in candidates)
+
+        # Inverted span so that *larger* spans get *smaller* sort
+        # keys, yielding descending order after a normal ascending
+        # radix pass.
+        inv_spans = [max_span - (e - s) for s, e, _ in candidates]
+        starts = [c[0] for c in candidates]
+
+        # ── Stable counting sort on a single digit ──────────
+        def _counting_sort_by_digit(
+            items: List[Tuple[int, int, PIIMatch]],
+            keys: List[int],
+            digit_pos: int,
+            base: int = 10,
+        ) -> Tuple[List[Tuple[int, int, PIIMatch]], List[int]]:
+            """
+            Perform one pass of counting sort on *items* using the
+            digit at position *digit_pos* (0 = ones, 1 = tens, …)
+            extracted from the corresponding *keys*.
+
+            Returns the reordered ``(items, keys)`` pair so that
+            subsequent passes can use the updated key order.
+            """
+            n = len(items)
+            divisor = base ** digit_pos
+
+            # Extract digit for each item
+            digits = [(k // divisor) % base for k in keys]
+
+            # Count occurrences
+            count = [0] * base
+            for d in digits:
+                count[d] += 1
+
+            # Prefix sum → starting positions
+            for i in range(1, base):
+                count[i] += count[i - 1]
+
+            # Build output in reverse for stability
+            out_items: List[Optional[Tuple[int, int, PIIMatch]]] = [None] * n
+            out_keys: List[int] = [0] * n
+
+            for i in range(n - 1, -1, -1):
+                d = digits[i]
+                count[d] -= 1
+                pos = count[d]
+                out_items[pos] = items[i]
+                out_keys[pos] = keys[i]
+
+            return out_items, out_keys  # type: ignore[return-value]
+
+        # ── Number of digit passes needed ────────────────────
+        def _num_digits(value: int, base: int = 10) -> int:
+            if value == 0:
+                return 1
+            count = 0
+            while value > 0:
+                count += 1
+                value //= base
+            return count
+
+        result = list(candidates)
+
+        # Pass 1 — sort by SECONDARY key (inverted span) first
+        sec_digits = _num_digits(max_span)
+        current_keys = list(inv_spans)
+        for d in range(sec_digits):
+            result, current_keys = _counting_sort_by_digit(
+                result, current_keys, d,
+            )
+
+        # Pass 2 — sort by PRIMARY key (start index)
+        pri_digits = _num_digits(max_start)
+        current_keys = [c[0] for c in result]  # re-extract starts after reorder
+        for d in range(pri_digits):
+            result, current_keys = _counting_sort_by_digit(
+                result, current_keys, d,
+            )
+
+        return result
+
     # ── Overlap resolution ───────────────────────────────────
     @staticmethod
     def _resolve_overlaps(
@@ -241,7 +357,8 @@ class PIIScanner:
         (more specific) match when two intervals collide.
 
         Algorithm (greedy interval scheduling):
-            1. Sort by start index ASC, then by span length DESC.
+            1. Sort by start index ASC, then by span length DESC
+               using a stable LSD Radix Sort.
                → At any position, the longest match comes first.
             2. Sweep left-to-right, tracking ``prev_end`` (the end
                index of the last accepted match).
@@ -256,9 +373,9 @@ class PIIScanner:
         if not candidates:
             return []
 
-        # Sort: primary key = start ASC,
-        #        secondary key = span length DESC (longer first).
-        candidates.sort(key=lambda c: (c[0], -(c[1] - c[0])))
+        # Radix sort replaces the previous Timsort call:
+        #   candidates.sort(key=lambda c: (c[0], -(c[1] - c[0])))
+        candidates = PIIScanner._radix_sort_candidates(candidates)
 
         accepted: List[PIIMatch] = []
         prev_end: int = -1  # end index of the last accepted match
@@ -272,4 +389,5 @@ class PIIScanner:
             # an already-accepted longer match → discard it.
 
         return accepted
+
 

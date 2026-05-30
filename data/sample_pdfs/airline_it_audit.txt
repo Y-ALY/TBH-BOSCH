@@ -1,0 +1,24 @@
+========================================================================
+AEROTECH INVENTORY MANAGEMENT SYSTEM - INTERNAL AUDIT LOG
+Date: May 30, 2026
+Department: Aircraft Maintenance & IT Infrastructure
+========================================================================
+
+SYSTEM ACCESS REVIEWS
+
+Log 01: Access Revocation (Disciplinary)
+Action: Immediate revocation of Tier-3 database access for Employee ID: EMP-44912 (Lars Wagner). 
+Reason: User is currently suspended pending a formal HR investigation into the unauthorized transfer of avionics inventory. Do not reinstate access under any circumstances until clearance is provided by the internal disciplinary committee.
+Contact for inquiry: security-ops@aerotech-global.de
+
+Log 02: Temporary Audit Access (Union & Health Context)
+Action: Grant 48-hour read-only access to the maintenance shift scheduling module for Sarah Weber.
+Reason: Sarah is acting in her capacity as the regional Trade Union representative (IG Metall). She is conducting an independent audit of the shift logs following the severe workplace injury reported on Hangar Floor B last week, which resulted in the hospitalization of two mechanics.
+Temporary Credential Routing: +49 151 88899922
+
+Log 03: Routine Vendor Onboarding
+Action: Create standard procurement profile for new parts supplier.
+Company: Global Flight Components GmbH
+Vendor Tax ID: DE112233445
+Billing Address: Flughafenstr. 45, 60549 Frankfurt
+Primary Account Manager: k.mueller@global-flight.com
