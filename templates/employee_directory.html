@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>File Explorer — Privacy Portal</title>
+
+<link rel="stylesheet" href="/static/css/dashboard.css">
+
+<style>
+/* Search-specific styles using existing design tokens */
+
+.search-container {
+    padding: 35px;
+    margin-bottom: 30px;
+    animation: fadeUp .8s ease;
+}
+
+.search-container h2 {
+    font-size: 26px;
+    margin-bottom: 8px;
+}
+
+.search-container p {
+    color: #666;
+    margin-bottom: 24px;
+    line-height: 1.6;
+}
+
+.search-form {
+    display: flex;
+    gap: 14px;
+}
+
+.search-input {
+    flex: 1;
+    padding: 16px 22px;
+
+    border: 1px solid rgba(0,0,0,.08);
+    border-radius: 16px;
+
+    font-size: 15px;
+    font-family: "Segoe UI", sans-serif;
+
+    background: rgba(255,255,255,.45);
+    backdrop-filter: blur(12px);
+
+    color: #1f2937;
+
+    outline: none;
+    transition: all .3s ease;
+}
+
+.search-input::placeholder {
+    color: #999;
+}
+
+.search-input:focus {
+    border-color: #007bc0;
+    box-shadow: 0 0 0 3px rgba(0,123,192,.12);
+    background: rgba(255,255,255,.7);
+}
+
+/* Results area */
+
+.results-header {
+    margin: 30px 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    animation: fadeUp .9s ease;
+}
+
+.results-header h2 {
+    font-size: 22px;
+}
+
+.results-meta {
+    display: flex;
+    gap: 12px;
+}
+
+.risk-badge {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.risk-badge.high {
+    background: rgba(234,0,22,.1);
+    color: #ea0016;
+}
+
+.risk-badge.medium {
+    background: rgba(245,158,11,.1);
+    color: #f59e0b;
+}
+
+.risk-badge.low {
+    background: rgba(16,185,129,.1);
+    color: #10b981;
+}
+
+/* Result card extensions */
+
+.result-card {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.result-card h3 {
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.result-card .file-icon {
+    font-size: 20px;
+}
+
+.result-card .type-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: #007bc0;
+    font-weight: 700;
+}
+
+.result-card .context-text {
+    font-size: 14px;
+    color: #555;
+    line-height: 1.6;
+    word-break: break-word;
+}
+
+/* Empty state */
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    animation: fadeUp .8s ease;
+}
+
+.empty-state .empty-icon {
+    font-size: 56px;
+    margin-bottom: 16px;
+    opacity: .5;
+}
+
+.empty-state h3 {
+    font-size: 20px;
+    margin-bottom: 8px;
+    color: #1f2937;
+}
+
+.empty-state p {
+    color: #888;
+    max-width: 400px;
+    margin: 0 auto;
+    line-height: 1.6;
+}
+
+/* Loading spinner */
+
+.loading-spinner {
+    text-align: center;
+    padding: 50px;
+}
+
+.loading-spinner::after {
+    content: "";
+    display: inline-block;
+    width: 36px;
+    height: 36px;
+    border: 3px solid rgba(0,123,192,.15);
+    border-top-color: #007bc0;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Error state */
+
+.error-state {
+    text-align: center;
+    padding: 40px 20px;
+}
+
+.error-state p {
+    color: #ea0016;
+    font-weight: 600;
+}
+</style>
+
+</head>
+
+<body>
+
+<div class="topbar">
+
+    <div class="left-top">
+
+        <button id="menuToggle" class="menu-btn">
+            ☰
+        </button>
+
+        <span class="brand">
+            Privacy Portal
+        </span>
+
+    </div>
+
+ <div class="account">
+
+    <button class="account-btn" onclick="toggleAccountMenu()">
+
+        <div class="avatar-small">
+            EA
+        </div>
+
+        <div class="account-info">
+            <strong>Eyad Adly</strong>
+            <span>Employee</span>
+        </div>
+
+    </button>
+
+    <div class="account-menu" id="accountMenu">
+
+        <a href="#">
+            My Profile
+        </a>
+
+        <a href="#">
+            Switch User
+        </a>
+
+        <a href="/">
+            Logout
+        </a>
+
+    </div>
+
+</div>
+</div>
+
+<div class="sidebar" id="sidebar">
+
+    <a href="/employee-dashboard">
+        <span class="icon">👤</span>
+        <span class="label">Profile</span>
+    </a>
+
+    <a href="/employee-dashboard#alerts">
+        <span class="icon">🚩</span>
+        <span class="label">Flagged Files</span>
+    </a>
+
+    <a href="/employee-dashboard#overview">
+        <span class="icon">📊</span>
+        <span class="label">Overview</span>
+    </a>
+
+    <a href="/employee-dashboard#actions">
+        <span class="icon">⚡</span>
+        <span class="label">Actions</span>
+    </a>
+
+    <a href="/employee-directory" class="active">
+        <span class="icon">🔍</span>
+        <span class="label">File Explorer</span>
+    </a>
+
+</div>
+
+<div class="main">
+
+    <section class="hero">
+
+        <h1>
+            File Explorer
+        </h1>
+
+        <p>
+            Search your files and documents by name, email, or user ID.
+            Review flagged content and inspect GDPR compliance findings.
+        </p>
+
+    </section>
+
+    <section class="glass-card search-container">
+
+        <h2>Search Directory</h2>
+
+        <p>
+            Enter a name, email address, or user ID to discover
+            associated files and GDPR findings.
+        </p>
+
+        <form class="search-form" id="searchForm" onsubmit="return false;">
+
+            <input
+                type="text"
+                class="search-input"
+                id="searchInput"
+                placeholder="Search by Name, Email, or User ID..."
+                autocomplete="off"
+            >
+
+            <button type="submit" class="action-btn" id="searchBtn">
+                🔍 Search
+            </button>
+
+        </form>
+
+    </section>
+
+    <div id="results-header-area"></div>
+
+    <div id="search-results" class="alerts-grid"></div>
+
+</div>
+
+<script>
+
+/* ---- Sidebar Toggle ---- */
+
+const menuBtn =
+document.getElementById("menuToggle");
+
+const sidebar =
+document.getElementById("sidebar");
+
+const main =
+document.querySelector(".main");
+
+menuBtn.addEventListener("click", () => {
+
+    sidebar.classList.toggle("collapsed");
+
+    main.classList.toggle("expanded");
+
+});
+
+/* ---- Account Menu Toggle ---- */
+
+function toggleAccountMenu() {
+    const menu = document.getElementById("accountMenu");
+    menu.classList.toggle("show-menu");
+}
+
+/* ---- Search Logic ---- */
+
+const searchForm   = document.getElementById("searchForm");
+const searchInput  = document.getElementById("searchInput");
+const searchBtn    = document.getElementById("searchBtn");
+const resultsArea  = document.getElementById("search-results");
+const headerArea   = document.getElementById("results-header-area");
+
+// Listen for form submission AND button click
+searchForm.addEventListener("submit", handleSearch);
+searchBtn.addEventListener("click", handleSearch);
+
+async function handleSearch(e) {
+    e.preventDefault();
+
+    const query = searchInput.value.trim();
+    if (!query) return;
+
+    // Show loading state
+    headerArea.innerHTML = "";
+    resultsArea.innerHTML = '<div class="loading-spinner"></div>';
+
+    try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+
+        if (!response.ok) {
+            throw new Error(`Server responded with ${response.status}`);
+        }
+
+        const data = await response.json();
+        renderResults(data);
+
+    } catch (err) {
+        resultsArea.innerHTML = `
+            <div class="glass-card error-state" style="grid-column: 1 / -1;">
+                <p>⚠️ Could not complete the search. Please try again.</p>
+                <p style="font-weight:400; color:#888; font-size:13px; margin-top:8px;">
+                    ${err.message}
+                </p>
+            </div>
+        `;
+        headerArea.innerHTML = "";
+    }
+}
+
+function renderResults(data) {
+    const results  = data.results  || [];
+    const metadata = data.metadata || {};
+
+    // ---- Empty State ----
+    if (results.length === 0) {
+        headerArea.innerHTML = "";
+        resultsArea.innerHTML = `
+            <div class="glass-card empty-state" style="grid-column: 1 / -1;">
+                <div class="empty-icon">📂</div>
+                <h3>No files found for this user</h3>
+                <p>Try searching with a different name, email address, or user ID.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // ---- Results Header with risk breakdown ----
+    const breakdown = metadata.risk_breakdown || {};
+    let badgesHtml = "";
+    for (const [level, count] of Object.entries(breakdown)) {
+        badgesHtml += `<span class="risk-badge ${level}">${level}: ${count}</span>`;
+    }
+
+    headerArea.innerHTML = `
+        <div class="results-header">
+            <h2>${metadata.total_count || results.length} Finding${results.length !== 1 ? "s" : ""}</h2>
+            <div class="results-meta">${badgesHtml}</div>
+        </div>
+    `;
+
+    // ---- Render Result Cards ----
+    resultsArea.innerHTML = "";
+
+    results.forEach((finding) => {
+        const riskClass = getRiskClass(finding.risk_level);
+        const fileIcon  = getFileIcon(finding.type);
+
+        const card = document.createElement("div");
+        card.className = "glass-card alert-card result-card";
+
+        card.innerHTML = `
+            <h3>
+                <span class="file-icon">${fileIcon}</span>
+                ${escapeHtml(finding.file_id)}
+            </h3>
+
+            <span class="type-label">${escapeHtml(finding.type)}</span>
+
+            <p class="context-text">
+                ${escapeHtml(finding.context || finding.value)}
+            </p>
+
+            <span class="${riskClass}">
+                ${capitalize(finding.risk_level)} Risk
+            </span>
+            
+            <a href="/user-details/${encodeURIComponent(finding.assigned_owner || 'unknown')}" class="action-btn" style="margin-top: 15px; text-decoration: none; text-align: center; display: inline-block; padding: 10px;">
+                View User Data →
+            </a>
+        `;
+
+        resultsArea.appendChild(card);
+    });
+}
+
+/* ---- Helpers ---- */
+
+function getRiskClass(level) {
+    switch ((level || "").toLowerCase()) {
+        case "high":   return "danger";
+        case "medium": return "warning";
+        default:       return "";
+    }
+}
+
+function getFileIcon(type) {
+    switch ((type || "").toLowerCase()) {
+        case "email":       return "📧";
+        case "iban":        return "🏦";
+        case "credit_card": return "💳";
+        case "phone":       return "📞";
+        case "userid":      return "🆔";
+        default:            return "📄";
+    }
+}
+
+function capitalize(str) {
+    if (!str) return "";
+    return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function escapeHtml(text) {
+    if (!text) return "";
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+</script>
+
+</body>
+</html>

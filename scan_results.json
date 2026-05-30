@@ -1,0 +1,52 @@
+[
+  {
+    "finding_id": "0fb99570-7eb7-445b-a18d-281aacda3c98",
+    "file_id": "expense_report_march.pdf",
+    "type": "full_name",
+    "value": "E-20491",
+    "context": "Employee: Sara Hoffmann (E-20491)",
+    "risk_level": "medium",
+    "assigned_owner": "employee",
+    "owner_resolved": false
+  },
+  {
+    "finding_id": "d811a4be-cd7f-463a-a013-0622a8829741",
+    "file_id": "supplier_onboarding.pdf",
+    "type": "business_contact",
+    "value": "procurement@nordic-components.example",
+    "context": "Contact: procurement@nordic-components.example for inquiries.",
+    "risk_level": "low",
+    "assigned_owner": "supplier",
+    "owner_resolved": false
+  },
+  {
+    "finding_id": "bd7b9b3d-0438-47a2-ad82-bdb83f9469c8",
+    "file_id": "access_request.pdf",
+    "type": "full_name",
+    "value": "J. Keller",
+    "context": "Authorized by Signature: J. Keller",
+    "risk_level": "medium",
+    "assigned_owner": "unknown",
+    "owner_resolved": false
+  },
+  {
+    "finding_id": "3a616c89-980c-43f6-9a7e-ef60c34f1a4e",
+    "file_id": "incident_log.txt",
+    "type": "other_personal_data",
+    "value": "mistakenly shared",
+    "context": "Description: A document containing personal data was mistakenly shared with the external vendor.",
+    "risk_level": "high",
+    "assigned_owner": "unknown",
+    "owner_resolved": false
+  },
+  {
+    "finding_id": "341404ed-19d6-4f2e-a78f-be5c74978e4c",
+    "file_id": "hr_record.pdf",
+    "type": "iban",
+    "value": "DE89 3704 0044 0532 0130 00",
+    "context": "Please deposit salary to IBAN: DE89 3704 0044 0532 0130 00",
+    "risk_level": "low",
+    "assigned_owner": "employee",
+    "owner_resolved": false
+  }
+]

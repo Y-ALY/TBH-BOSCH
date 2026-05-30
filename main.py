@@ -8,6 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import database
 
+import json
+import os
+from typing import Optional, List, Dict, Any
+
 app = FastAPI(title="Bosch GDPR Scan Engine API")
 
 app.mount(
@@ -91,11 +95,109 @@ def employee_dashboard(request: Request):
     )
 
 
+@app.get("/employee-directory")
+def employee_directory(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="employee_directory.html",
+        context={}
+    )
 
 
+@app.get("/user-details/{employee_id}")
+def user_details(employee_id: str, request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="user_details.html",
+        context={"employee_id": employee_id}
+    )
 
 from sqlalchemy import func
 from database import FileMetadata, Finding
+
+@app.get("/api/user-details/{employee_id}")
+def get_user_details(employee_id: str):
+    # Group findings from _search_db for this employee
+    user_findings = [item for item in _search_db if item.get("assigned_owner") == employee_id]
+    
+    if not user_findings:
+        return {"employee_id": employee_id, "files": [], "retention_deadline": None}
+        
+    findings_by_file = {}
+    for finding in user_findings:
+        f_id = finding.get("file_id", "Unknown File")
+        if f_id not in findings_by_file:
+            findings_by_file[f_id] = []
+            
+        findings_by_file[f_id].append({
+            "finding_id": finding.get("finding_id"),
+            "category": finding.get("type"),
+            "flagged_snippet": finding.get("value"),
+            "reasoning": finding.get("context"),
+            "risk_level": finding.get("risk_level", "low"),
+            "status": "Pending" if not finding.get("owner_resolved") else "Resolved",
+            "confidence_score": 0.95
+        })
+
+    from datetime import datetime, timedelta
+    
+    file_results = []
+    earliest_deadline = None
+    
+    for f_id, f_findings in findings_by_file.items():
+        # Mock retention deadline based on highest risk level in the file
+        highest_risk = "low"
+        for f in f_findings:
+            if f.get("risk_level") == "high":
+                highest_risk = "high"
+                break
+            elif f.get("risk_level") == "medium":
+                highest_risk = "medium"
+                
+        if highest_risk == "high":
+            deadline = datetime.now() + timedelta(seconds=15)
+        elif highest_risk == "medium":
+            deadline = datetime.now() + timedelta(seconds=45)
+        else:
+            deadline = datetime.now() + timedelta(days=30)
+            
+        if earliest_deadline is None or deadline < earliest_deadline:
+            earliest_deadline = deadline
+            
+        file_results.append({
+            "file_id": f_id,
+            "file_name": f_id,
+            "file_path": f"/shared_drive/{employee_id}/{f_id}",
+            "size_bytes": 1024 * 42, # Mock 42 KB
+            "last_modified": (datetime.now() - timedelta(days=5)).isoformat(),
+            "retention_deadline": deadline.isoformat(),
+            "findings": f_findings
+        })
+
+    # Add a couple of dummy CLEAN files so the user sees not everything is a violation
+    clean_files = ["project_proposal.docx", "annual_review.pdf", "meeting_notes.txt"]
+    for idx, c_file in enumerate(clean_files):
+        deadline = datetime.now() + timedelta(days=60 + idx * 10)
+        if earliest_deadline is None or deadline < earliest_deadline:
+            earliest_deadline = deadline
+            
+        file_results.append({
+            "file_id": f"clean_{idx}",
+            "file_name": c_file,
+            "file_path": f"/shared_drive/{employee_id}/{c_file}",
+            "size_bytes": 1024 * (15 + idx * 5),
+            "last_modified": (datetime.now() - timedelta(days=1)).isoformat(),
+            "retention_deadline": deadline.isoformat(),
+            "findings": [] # Empty findings array means it's a clean file!
+        })
+
+    return {
+        "employee_id": employee_id,
+        "retention_deadline": earliest_deadline.isoformat() if earliest_deadline else None,
+        "files": file_results
+    }
+
+
 
 @app.get("/api/admin/kpis")
 def get_admin_kpis(db: Session = Depends(get_db)):
@@ -226,3 +328,71 @@ def seed_dummy_data(db: Session = Depends(get_db)):
     db.add(dummy_finding)
     db.commit()
     return {"message": "Dummy finding injected!"}
+
+
+# ── In-memory search database ──────────────────────────────────────
+_search_db: List[Dict[str, Any]] = []
+
+@app.on_event("startup")
+async def load_search_data():
+    global _search_db
+    data_file = "scan_results.json"
+    if os.path.exists(data_file):
+        try:
+            with open(data_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    _search_db = data
+                    print(f"Loaded {len(_search_db)} findings into search DB.")
+        except Exception as e:
+            print(f"Error loading {data_file}: {e}")
+    else:
+        print(f"Warning: {data_file} not found. Search will return empty results.")
+
+from fastapi import Query as QueryParam
+
+@app.get("/api/search")
+def search_findings(
+    q: Optional[str] = QueryParam(None),
+    risk_level: Optional[str] = QueryParam(None),
+    type: Optional[str] = QueryParam(None),
+    owner: Optional[str] = QueryParam(None),
+    resolved: Optional[bool] = QueryParam(None),
+    skip: int = QueryParam(0, ge=0),
+    limit: int = QueryParam(50, ge=1, le=1000),
+):
+    q_lower = q.lower() if q else None
+    filtered = []
+
+    for item in _search_db:
+        if risk_level and item.get("risk_level", "") != risk_level:
+            continue
+        if type and item.get("type", "") != type:
+            continue
+        if owner and item.get("assigned_owner", "") != owner:
+            continue
+        if resolved is not None and bool(item.get("owner_resolved", False)) != resolved:
+            continue
+        if q_lower:
+            val = item.get("value", "").lower()
+            ctx = item.get("context", "").lower()
+            fid = item.get("file_id", "").lower()
+            if q_lower not in val and q_lower not in ctx and q_lower not in fid:
+                continue
+        filtered.append(item)
+
+    total_count = len(filtered)
+    risk_breakdown = {}
+    for res in filtered:
+        rl = res.get("risk_level", "unknown")
+        risk_breakdown[rl] = risk_breakdown.get(rl, 0) + 1
+
+    paginated = filtered[skip : skip + limit]
+
+    return {
+        "results": paginated,
+        "metadata": {
+            "total_count": total_count,
+            "risk_breakdown": risk_breakdown,
+        },
+    }

@@ -33,7 +33,7 @@ from pii_filter.models import DocumentInput
 logger = logging.getLogger(__name__)
 
 # ── Supported extensions ────────────────────────────────────
-SUPPORTED_EXTENSIONS: Set[str] = {".txt", ".pdf", ".docx"}
+SUPPORTED_EXTENSIONS: Set[str] = {".txt", ".pdf", ".docx", ".md"}
 
 
 # ── Text extraction helpers ─────────────────────────────────
@@ -74,6 +74,7 @@ def _extract_docx(file_path: Path) -> str:
 # Dispatcher: extension → extractor function
 _EXTRACTORS = {
     ".txt": _extract_txt,
+    ".md": _extract_txt,
     ".pdf": _extract_pdf,
     ".docx": _extract_docx,
 }
