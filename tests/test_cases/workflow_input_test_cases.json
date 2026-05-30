@@ -1,0 +1,1544 @@
+{
+  "schema": "tbh-bosch.workflow-testcases.v2",
+  "purpose": "GDPR challenge-aligned workflow inputs with realistic personal data content",
+  "notes": [
+    "challenge_personal_data_present reflects GDPR-relevant fields from the challenge paper",
+    "exact_match_counts reflects what the current regex scanner is expected to detect (email/phone/iban/credit_card)"
+  ],
+  "count": 50,
+  "cases": [
+    {
+      "test_id": "WF-001",
+      "description": "Employee profile file 1",
+      "document": {
+        "document_id": "wf-doc-001",
+        "file_name": "wf_doc_001.txt",
+        "last_modified": "2026-05-30T11:01:00",
+        "content": "Employee record: First name Anna1 Last name Keller1. Username akeller1. Email anna1@bosch.com. Signature: Anna Keller. Phone +49 170 1200001. Home address: Hauptstrasse 1, 70173 Stuttgart. Travel history: Berlin, Paris."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "email",
+          "signature",
+          "phone",
+          "home_address",
+          "travel_history"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-002",
+      "description": "Employee profile file 2",
+      "document": {
+        "document_id": "wf-doc-002",
+        "file_name": "wf_doc_002.txt",
+        "last_modified": "2026-05-30T11:02:00",
+        "content": "Employee record: First name Anna2 Last name Keller2. Username akeller2. Email anna2@bosch.com. Signature: Anna Keller. Phone +49 170 1200002. Home address: Hauptstrasse 2, 70173 Stuttgart. Travel history: Berlin, Paris."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "email",
+          "signature",
+          "phone",
+          "home_address",
+          "travel_history"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-003",
+      "description": "Employee profile file 3",
+      "document": {
+        "document_id": "wf-doc-003",
+        "file_name": "wf_doc_003.txt",
+        "last_modified": "2026-05-30T11:03:00",
+        "content": "Employee record: First name Anna3 Last name Keller3. Username akeller3. Email anna3@bosch.com. Signature: Anna Keller. Phone +49 170 1200003. Home address: Hauptstrasse 3, 70173 Stuttgart. Travel history: Berlin, Paris."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "email",
+          "signature",
+          "phone",
+          "home_address",
+          "travel_history"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-004",
+      "description": "Employee profile file 4",
+      "document": {
+        "document_id": "wf-doc-004",
+        "file_name": "wf_doc_004.txt",
+        "last_modified": "2026-05-30T11:04:00",
+        "content": "Employee record: First name Anna4 Last name Keller4. Username akeller4. Email anna4@bosch.com. Signature: Anna Keller. Phone +49 170 1200004. Home address: Hauptstrasse 4, 70173 Stuttgart. Travel history: Berlin, Paris."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "email",
+          "signature",
+          "phone",
+          "home_address",
+          "travel_history"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-005",
+      "description": "Employee profile file 5",
+      "document": {
+        "document_id": "wf-doc-005",
+        "file_name": "wf_doc_005.txt",
+        "last_modified": "2026-05-30T11:05:00",
+        "content": "Employee record: First name Anna5 Last name Keller5. Username akeller5. Email anna5@bosch.com. Signature: Anna Keller. Phone +49 170 1200005. Home address: Hauptstrasse 5, 70173 Stuttgart. Travel history: Berlin, Paris."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "email",
+          "signature",
+          "phone",
+          "home_address",
+          "travel_history"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-006",
+      "description": "Employee profile file 6",
+      "document": {
+        "document_id": "wf-doc-006",
+        "file_name": "wf_doc_006.txt",
+        "last_modified": "2026-05-30T11:06:00",
+        "content": "Employee record: First name Anna6 Last name Keller6. Username akeller6. Email anna6@bosch.com. Signature: Anna Keller. Phone +49 170 1200006. Home address: Hauptstrasse 6, 70173 Stuttgart. Travel history: Berlin, Paris."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "email",
+          "signature",
+          "phone",
+          "home_address",
+          "travel_history"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-007",
+      "description": "Employee profile file 7",
+      "document": {
+        "document_id": "wf-doc-007",
+        "file_name": "wf_doc_007.txt",
+        "last_modified": "2026-05-30T11:07:00",
+        "content": "Employee record: First name Anna7 Last name Keller7. Username akeller7. Email anna7@bosch.com. Signature: Anna Keller. Phone +49 170 1200007. Home address: Hauptstrasse 7, 70173 Stuttgart. Travel history: Berlin, Paris."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "email",
+          "signature",
+          "phone",
+          "home_address",
+          "travel_history"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-008",
+      "description": "Employee profile file 8",
+      "document": {
+        "document_id": "wf-doc-008",
+        "file_name": "wf_doc_008.txt",
+        "last_modified": "2026-05-30T11:08:00",
+        "content": "Employee record: First name Anna8 Last name Keller8. Username akeller8. Email anna8@bosch.com. Signature: Anna Keller. Phone +49 170 1200008. Home address: Hauptstrasse 8, 70173 Stuttgart. Travel history: Berlin, Paris."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "email",
+          "signature",
+          "phone",
+          "home_address",
+          "travel_history"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-009",
+      "description": "Employee profile file 9",
+      "document": {
+        "document_id": "wf-doc-009",
+        "file_name": "wf_doc_009.txt",
+        "last_modified": "2026-05-30T11:09:00",
+        "content": "Employee record: First name Anna9 Last name Keller9. Username akeller9. Email anna9@bosch.com. Signature: Anna Keller. Phone +49 170 1200009. Home address: Hauptstrasse 9, 70173 Stuttgart. Travel history: Berlin, Paris."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "email",
+          "signature",
+          "phone",
+          "home_address",
+          "travel_history"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-010",
+      "description": "Employee profile file 10",
+      "document": {
+        "document_id": "wf-doc-010",
+        "file_name": "wf_doc_010.txt",
+        "last_modified": "2026-05-30T11:10:00",
+        "content": "Employee record: First name Anna10 Last name Keller10. Username akeller10. Email anna10@bosch.com. Signature: Anna Keller. Phone +49 170 1200010. Home address: Hauptstrasse 10, 70173 Stuttgart. Travel history: Berlin, Paris."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "email",
+          "signature",
+          "phone",
+          "home_address",
+          "travel_history"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-011",
+      "description": "Customer invoice 11",
+      "document": {
+        "document_id": "wf-doc-011",
+        "file_name": "wf_doc_011.txt",
+        "last_modified": "2026-05-30T11:11:00",
+        "content": "Invoice INV-2026-11. Customer: Liam Weber. Billing address: Rosenweg 11, 80331 Munich. Shipping address: Gartenweg 11, 50667 Cologne. Contact email liam.weber11@example.com. Contact phone +49 151 330011. Card number 4111 1111 1111 1111."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "credit_card": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "billing_address",
+          "shipping_address",
+          "email",
+          "phone",
+          "card_number"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-012",
+      "description": "Customer invoice 12",
+      "document": {
+        "document_id": "wf-doc-012",
+        "file_name": "wf_doc_012.txt",
+        "last_modified": "2026-05-30T11:12:00",
+        "content": "Invoice INV-2026-12. Customer: Liam Weber. Billing address: Rosenweg 12, 80331 Munich. Shipping address: Gartenweg 12, 50667 Cologne. Contact email liam.weber12@example.com. Contact phone +49 151 330012. Card number 4111 1111 1111 1111."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "credit_card": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "billing_address",
+          "shipping_address",
+          "email",
+          "phone",
+          "card_number"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-013",
+      "description": "Customer invoice 13",
+      "document": {
+        "document_id": "wf-doc-013",
+        "file_name": "wf_doc_013.txt",
+        "last_modified": "2026-05-30T11:13:00",
+        "content": "Invoice INV-2026-13. Customer: Liam Weber. Billing address: Rosenweg 13, 80331 Munich. Shipping address: Gartenweg 13, 50667 Cologne. Contact email liam.weber13@example.com. Contact phone +49 151 330013. Card number 4111 1111 1111 1111."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "credit_card": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "billing_address",
+          "shipping_address",
+          "email",
+          "phone",
+          "card_number"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-014",
+      "description": "Customer invoice 14",
+      "document": {
+        "document_id": "wf-doc-014",
+        "file_name": "wf_doc_014.txt",
+        "last_modified": "2026-05-30T11:14:00",
+        "content": "Invoice INV-2026-14. Customer: Liam Weber. Billing address: Rosenweg 14, 80331 Munich. Shipping address: Gartenweg 14, 50667 Cologne. Contact email liam.weber14@example.com. Contact phone +49 151 330014. Card number 4111 1111 1111 1111."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "credit_card": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "billing_address",
+          "shipping_address",
+          "email",
+          "phone",
+          "card_number"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-015",
+      "description": "Customer invoice 15",
+      "document": {
+        "document_id": "wf-doc-015",
+        "file_name": "wf_doc_015.txt",
+        "last_modified": "2026-05-30T11:15:00",
+        "content": "Invoice INV-2026-15. Customer: Liam Weber. Billing address: Rosenweg 15, 80331 Munich. Shipping address: Gartenweg 15, 50667 Cologne. Contact email liam.weber15@example.com. Contact phone +49 151 330015. Card number 4111 1111 1111 1111."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "credit_card": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "billing_address",
+          "shipping_address",
+          "email",
+          "phone",
+          "card_number"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-016",
+      "description": "Customer invoice 16",
+      "document": {
+        "document_id": "wf-doc-016",
+        "file_name": "wf_doc_016.txt",
+        "last_modified": "2026-05-30T11:16:00",
+        "content": "Invoice INV-2026-16. Customer: Liam Weber. Billing address: Rosenweg 16, 80331 Munich. Shipping address: Gartenweg 16, 50667 Cologne. Contact email liam.weber16@example.com. Contact phone +49 151 330016. Card number 4111 1111 1111 1111."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "credit_card": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "billing_address",
+          "shipping_address",
+          "email",
+          "phone",
+          "card_number"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-017",
+      "description": "Customer invoice 17",
+      "document": {
+        "document_id": "wf-doc-017",
+        "file_name": "wf_doc_017.txt",
+        "last_modified": "2026-05-30T11:17:00",
+        "content": "Invoice INV-2026-17. Customer: Liam Weber. Billing address: Rosenweg 17, 80331 Munich. Shipping address: Gartenweg 17, 50667 Cologne. Contact email liam.weber17@example.com. Contact phone +49 151 330017. Card number 4111 1111 1111 1111."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "credit_card": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "billing_address",
+          "shipping_address",
+          "email",
+          "phone",
+          "card_number"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-018",
+      "description": "Customer invoice 18",
+      "document": {
+        "document_id": "wf-doc-018",
+        "file_name": "wf_doc_018.txt",
+        "last_modified": "2026-05-30T11:18:00",
+        "content": "Invoice INV-2026-18. Customer: Liam Weber. Billing address: Rosenweg 18, 80331 Munich. Shipping address: Gartenweg 18, 50667 Cologne. Contact email liam.weber18@example.com. Contact phone +49 151 330018. Card number 4111 1111 1111 1111."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "credit_card": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "billing_address",
+          "shipping_address",
+          "email",
+          "phone",
+          "card_number"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-019",
+      "description": "Customer invoice 19",
+      "document": {
+        "document_id": "wf-doc-019",
+        "file_name": "wf_doc_019.txt",
+        "last_modified": "2026-05-30T11:19:00",
+        "content": "Invoice INV-2026-19. Customer: Liam Weber. Billing address: Rosenweg 19, 80331 Munich. Shipping address: Gartenweg 19, 50667 Cologne. Contact email liam.weber19@example.com. Contact phone +49 151 330019. Card number 4111 1111 1111 1111."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "credit_card": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "billing_address",
+          "shipping_address",
+          "email",
+          "phone",
+          "card_number"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-020",
+      "description": "Customer invoice 20",
+      "document": {
+        "document_id": "wf-doc-020",
+        "file_name": "wf_doc_020.txt",
+        "last_modified": "2026-05-30T11:20:00",
+        "content": "Invoice INV-2026-20. Customer: Liam Weber. Billing address: Rosenweg 20, 80331 Munich. Shipping address: Gartenweg 20, 50667 Cologne. Contact email liam.weber20@example.com. Contact phone +49 151 330020. Card number 4111 1111 1111 1111."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "credit_card": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "billing_address",
+          "shipping_address",
+          "email",
+          "phone",
+          "card_number"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-021",
+      "description": "Onboarding identity form 21",
+      "document": {
+        "document_id": "wf-doc-021",
+        "file_name": "wf_doc_021.txt",
+        "last_modified": "2026-05-30T11:21:00",
+        "content": "Candidate: Noor Schmidt. Login name: nschmidt21. Passport number: C021234521. ID card number: IDC-217788. Drivers license: DL-2199-AB. Email noor.schmidt21@mail.com. Phone (555) 123-4521. Address: Lindenstrasse 21, 20095 Hamburg."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "passport_number",
+          "id_card_number",
+          "drivers_license",
+          "email",
+          "phone",
+          "home_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-022",
+      "description": "Onboarding identity form 22",
+      "document": {
+        "document_id": "wf-doc-022",
+        "file_name": "wf_doc_022.txt",
+        "last_modified": "2026-05-30T11:22:00",
+        "content": "Candidate: Noor Schmidt. Login name: nschmidt22. Passport number: C022234522. ID card number: IDC-227788. Drivers license: DL-2299-AB. Email noor.schmidt22@mail.com. Phone (555) 123-4522. Address: Lindenstrasse 22, 20095 Hamburg."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "passport_number",
+          "id_card_number",
+          "drivers_license",
+          "email",
+          "phone",
+          "home_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-023",
+      "description": "Onboarding identity form 23",
+      "document": {
+        "document_id": "wf-doc-023",
+        "file_name": "wf_doc_023.txt",
+        "last_modified": "2026-05-30T11:23:00",
+        "content": "Candidate: Noor Schmidt. Login name: nschmidt23. Passport number: C023234523. ID card number: IDC-237788. Drivers license: DL-2399-AB. Email noor.schmidt23@mail.com. Phone (555) 123-4523. Address: Lindenstrasse 23, 20095 Hamburg."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "passport_number",
+          "id_card_number",
+          "drivers_license",
+          "email",
+          "phone",
+          "home_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-024",
+      "description": "Onboarding identity form 24",
+      "document": {
+        "document_id": "wf-doc-024",
+        "file_name": "wf_doc_024.txt",
+        "last_modified": "2026-05-30T11:24:00",
+        "content": "Candidate: Noor Schmidt. Login name: nschmidt24. Passport number: C024234524. ID card number: IDC-247788. Drivers license: DL-2499-AB. Email noor.schmidt24@mail.com. Phone (555) 123-4524. Address: Lindenstrasse 24, 20095 Hamburg."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "passport_number",
+          "id_card_number",
+          "drivers_license",
+          "email",
+          "phone",
+          "home_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-025",
+      "description": "Onboarding identity form 25",
+      "document": {
+        "document_id": "wf-doc-025",
+        "file_name": "wf_doc_025.txt",
+        "last_modified": "2026-05-30T11:25:00",
+        "content": "Candidate: Noor Schmidt. Login name: nschmidt25. Passport number: C025234525. ID card number: IDC-257788. Drivers license: DL-2599-AB. Email noor.schmidt25@mail.com. Phone (555) 123-4525. Address: Lindenstrasse 25, 20095 Hamburg."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "passport_number",
+          "id_card_number",
+          "drivers_license",
+          "email",
+          "phone",
+          "home_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-026",
+      "description": "Onboarding identity form 26",
+      "document": {
+        "document_id": "wf-doc-026",
+        "file_name": "wf_doc_026.txt",
+        "last_modified": "2026-05-30T11:26:00",
+        "content": "Candidate: Noor Schmidt. Login name: nschmidt26. Passport number: C026234526. ID card number: IDC-267788. Drivers license: DL-2699-AB. Email noor.schmidt26@mail.com. Phone (555) 123-4526. Address: Lindenstrasse 26, 20095 Hamburg."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "passport_number",
+          "id_card_number",
+          "drivers_license",
+          "email",
+          "phone",
+          "home_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-027",
+      "description": "Onboarding identity form 27",
+      "document": {
+        "document_id": "wf-doc-027",
+        "file_name": "wf_doc_027.txt",
+        "last_modified": "2026-05-30T11:27:00",
+        "content": "Candidate: Noor Schmidt. Login name: nschmidt27. Passport number: C027234527. ID card number: IDC-277788. Drivers license: DL-2799-AB. Email noor.schmidt27@mail.com. Phone (555) 123-4527. Address: Lindenstrasse 27, 20095 Hamburg."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "passport_number",
+          "id_card_number",
+          "drivers_license",
+          "email",
+          "phone",
+          "home_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-028",
+      "description": "Onboarding identity form 28",
+      "document": {
+        "document_id": "wf-doc-028",
+        "file_name": "wf_doc_028.txt",
+        "last_modified": "2026-05-30T11:28:00",
+        "content": "Candidate: Noor Schmidt. Login name: nschmidt28. Passport number: C028234528. ID card number: IDC-287788. Drivers license: DL-2899-AB. Email noor.schmidt28@mail.com. Phone (555) 123-4528. Address: Lindenstrasse 28, 20095 Hamburg."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "passport_number",
+          "id_card_number",
+          "drivers_license",
+          "email",
+          "phone",
+          "home_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-029",
+      "description": "Onboarding identity form 29",
+      "document": {
+        "document_id": "wf-doc-029",
+        "file_name": "wf_doc_029.txt",
+        "last_modified": "2026-05-30T11:29:00",
+        "content": "Candidate: Noor Schmidt. Login name: nschmidt29. Passport number: C029234529. ID card number: IDC-297788. Drivers license: DL-2999-AB. Email noor.schmidt29@mail.com. Phone (555) 123-4529. Address: Lindenstrasse 29, 20095 Hamburg."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "passport_number",
+          "id_card_number",
+          "drivers_license",
+          "email",
+          "phone",
+          "home_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-030",
+      "description": "Onboarding identity form 30",
+      "document": {
+        "document_id": "wf-doc-030",
+        "file_name": "wf_doc_030.txt",
+        "last_modified": "2026-05-30T11:30:00",
+        "content": "Candidate: Noor Schmidt. Login name: nschmidt30. Passport number: C030234530. ID card number: IDC-307788. Drivers license: DL-3099-AB. Email noor.schmidt30@mail.com. Phone (555) 123-4530. Address: Lindenstrasse 30, 20095 Hamburg."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "passport_number",
+          "id_card_number",
+          "drivers_license",
+          "email",
+          "phone",
+          "home_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-031",
+      "description": "Vendor payout file 31",
+      "document": {
+        "document_id": "wf-doc-031",
+        "file_name": "wf_doc_031.txt",
+        "last_modified": "2026-05-30T11:31:00",
+        "content": "Vendor contact: Marta Fischer. Email marta.fischer31@vendor.com. Telephone +49 221 9800031. Bank transfer IBAN DE89 3704 0044 0532 0130 00. Signature: Marta Fischer. Shipping address: Hafenstrasse 31, 28195 Bremen."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "iban": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "email",
+          "phone",
+          "iban",
+          "signature",
+          "shipping_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-032",
+      "description": "Vendor payout file 32",
+      "document": {
+        "document_id": "wf-doc-032",
+        "file_name": "wf_doc_032.txt",
+        "last_modified": "2026-05-30T11:32:00",
+        "content": "Vendor contact: Marta Fischer. Email marta.fischer32@vendor.com. Telephone +49 221 9800032. Bank transfer IBAN DE44 5001 0517 5407 3249 31. Signature: Marta Fischer. Shipping address: Hafenstrasse 32, 28195 Bremen."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "iban": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "email",
+          "phone",
+          "iban",
+          "signature",
+          "shipping_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-033",
+      "description": "Vendor payout file 33",
+      "document": {
+        "document_id": "wf-doc-033",
+        "file_name": "wf_doc_033.txt",
+        "last_modified": "2026-05-30T11:33:00",
+        "content": "Vendor contact: Marta Fischer. Email marta.fischer33@vendor.com. Telephone +49 221 9800033. Bank transfer IBAN DE27 1007 0024 0066 6440 04. Signature: Marta Fischer. Shipping address: Hafenstrasse 33, 28195 Bremen."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "iban": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "email",
+          "phone",
+          "iban",
+          "signature",
+          "shipping_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-034",
+      "description": "Vendor payout file 34",
+      "document": {
+        "document_id": "wf-doc-034",
+        "file_name": "wf_doc_034.txt",
+        "last_modified": "2026-05-30T11:34:00",
+        "content": "Vendor contact: Marta Fischer. Email marta.fischer34@vendor.com. Telephone +49 221 9800034. Bank transfer IBAN DE68 2105 0170 0012 3456 78. Signature: Marta Fischer. Shipping address: Hafenstrasse 34, 28195 Bremen."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "iban": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "email",
+          "phone",
+          "iban",
+          "signature",
+          "shipping_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-035",
+      "description": "Vendor payout file 35",
+      "document": {
+        "document_id": "wf-doc-035",
+        "file_name": "wf_doc_035.txt",
+        "last_modified": "2026-05-30T11:35:00",
+        "content": "Vendor contact: Marta Fischer. Email marta.fischer35@vendor.com. Telephone +49 221 9800035. Bank transfer IBAN DE20 5005 0000 1234 5678 90. Signature: Marta Fischer. Shipping address: Hafenstrasse 35, 28195 Bremen."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "iban": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "email",
+          "phone",
+          "iban",
+          "signature",
+          "shipping_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-036",
+      "description": "Vendor payout file 36",
+      "document": {
+        "document_id": "wf-doc-036",
+        "file_name": "wf_doc_036.txt",
+        "last_modified": "2026-05-30T11:36:00",
+        "content": "Vendor contact: Marta Fischer. Email marta.fischer36@vendor.com. Telephone +49 221 9800036. Bank transfer IBAN DE55 5001 0517 5407 3249 31. Signature: Marta Fischer. Shipping address: Hafenstrasse 36, 28195 Bremen."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "iban": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "email",
+          "phone",
+          "iban",
+          "signature",
+          "shipping_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-037",
+      "description": "Vendor payout file 37",
+      "document": {
+        "document_id": "wf-doc-037",
+        "file_name": "wf_doc_037.txt",
+        "last_modified": "2026-05-30T11:37:00",
+        "content": "Vendor contact: Marta Fischer. Email marta.fischer37@vendor.com. Telephone +49 221 9800037. Bank transfer IBAN DE12 5001 0517 5407 3249 31. Signature: Marta Fischer. Shipping address: Hafenstrasse 37, 28195 Bremen."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "iban": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "email",
+          "phone",
+          "iban",
+          "signature",
+          "shipping_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-038",
+      "description": "Vendor payout file 38",
+      "document": {
+        "document_id": "wf-doc-038",
+        "file_name": "wf_doc_038.txt",
+        "last_modified": "2026-05-30T11:38:00",
+        "content": "Vendor contact: Marta Fischer. Email marta.fischer38@vendor.com. Telephone +49 221 9800038. Bank transfer IBAN DE21 5003 0000 0123 4567 89. Signature: Marta Fischer. Shipping address: Hafenstrasse 38, 28195 Bremen."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "iban": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "email",
+          "phone",
+          "iban",
+          "signature",
+          "shipping_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-039",
+      "description": "Vendor payout file 39",
+      "document": {
+        "document_id": "wf-doc-039",
+        "file_name": "wf_doc_039.txt",
+        "last_modified": "2026-05-30T11:39:00",
+        "content": "Vendor contact: Marta Fischer. Email marta.fischer39@vendor.com. Telephone +49 221 9800039. Bank transfer IBAN DE02 5001 0517 5407 3249 31. Signature: Marta Fischer. Shipping address: Hafenstrasse 39, 28195 Bremen."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "iban": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "email",
+          "phone",
+          "iban",
+          "signature",
+          "shipping_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-040",
+      "description": "Vendor payout file 40",
+      "document": {
+        "document_id": "wf-doc-040",
+        "file_name": "wf_doc_040.txt",
+        "last_modified": "2026-05-30T11:40:00",
+        "content": "Vendor contact: Marta Fischer. Email marta.fischer40@vendor.com. Telephone +49 221 9800040. Bank transfer IBAN DE63 5001 0517 5407 3249 31. Signature: Marta Fischer. Shipping address: Hafenstrasse 40, 28195 Bremen."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "iban": 1
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "email",
+          "phone",
+          "iban",
+          "signature",
+          "shipping_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-041",
+      "description": "Clean policy note 41",
+      "document": {
+        "document_id": "wf-doc-041",
+        "file_name": "wf_doc_041.txt",
+        "last_modified": "2026-05-30T11:41:00",
+        "content": "Policy revision 41: retention controls, storage limitation, architecture roadmap. No personal references."
+      },
+      "expected": {
+        "should_flag": false,
+        "exact_match_counts": {},
+        "expected_total_matches": 0,
+        "challenge_personal_data_present": [],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-042",
+      "description": "Clean policy note 42",
+      "document": {
+        "document_id": "wf-doc-042",
+        "file_name": "wf_doc_042.txt",
+        "last_modified": "2026-05-30T11:42:00",
+        "content": "Policy revision 42: retention controls, storage limitation, architecture roadmap. No personal references."
+      },
+      "expected": {
+        "should_flag": false,
+        "exact_match_counts": {},
+        "expected_total_matches": 0,
+        "challenge_personal_data_present": [],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-043",
+      "description": "Clean policy note 43",
+      "document": {
+        "document_id": "wf-doc-043",
+        "file_name": "wf_doc_043.txt",
+        "last_modified": "2026-05-30T11:43:00",
+        "content": "Policy revision 43: retention controls, storage limitation, architecture roadmap. No personal references."
+      },
+      "expected": {
+        "should_flag": false,
+        "exact_match_counts": {},
+        "expected_total_matches": 0,
+        "challenge_personal_data_present": [],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-044",
+      "description": "Clean policy note 44",
+      "document": {
+        "document_id": "wf-doc-044",
+        "file_name": "wf_doc_044.txt",
+        "last_modified": "2026-05-30T11:44:00",
+        "content": "Policy revision 44: retention controls, storage limitation, architecture roadmap. No personal references."
+      },
+      "expected": {
+        "should_flag": false,
+        "exact_match_counts": {},
+        "expected_total_matches": 0,
+        "challenge_personal_data_present": [],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-045",
+      "description": "Clean policy note 45",
+      "document": {
+        "document_id": "wf-doc-045",
+        "file_name": "wf_doc_045.txt",
+        "last_modified": "2026-05-30T11:45:00",
+        "content": "Policy revision 45: retention controls, storage limitation, architecture roadmap. No personal references."
+      },
+      "expected": {
+        "should_flag": false,
+        "exact_match_counts": {},
+        "expected_total_matches": 0,
+        "challenge_personal_data_present": [],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-046",
+      "description": "Mixed heavy personal data",
+      "document": {
+        "document_id": "wf-doc-046",
+        "file_name": "wf_doc_046.txt",
+        "last_modified": "2026-05-30T11:46:00",
+        "content": "Person: Sofia Brandt, username sbrandt, email sofia.brandt@example.org, phone +49 711 400 40990, passport P9988123, billing address Bachstrasse 8, 70174 Stuttgart, IBAN DE91 1000 0000 0123 4567 89, card 5500 0000 0000 0004"
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1,
+          "iban": 1,
+          "credit_card": 1
+        },
+        "expected_total_matches": 4,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "username",
+          "email",
+          "phone",
+          "passport_number",
+          "billing_address",
+          "iban",
+          "card_number"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-047",
+      "description": "Travel + identity",
+      "document": {
+        "document_id": "wf-doc-047",
+        "file_name": "wf_doc_047.txt",
+        "last_modified": "2026-05-30T11:47:00",
+        "content": "Travel history file: Jonas Meyer flew FRA-LHR-FRA. ID card number ID-778899, driver license DL-AB-9988, email jonas.meyer@corp.example, phone +49 176 22223333"
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 1
+        },
+        "expected_total_matches": 2,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "travel_history",
+          "id_card_number",
+          "drivers_license",
+          "email",
+          "phone"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-048",
+      "description": "Address and signature only",
+      "document": {
+        "document_id": "wf-doc-048",
+        "file_name": "wf_doc_048.txt",
+        "last_modified": "2026-05-30T11:48:00",
+        "content": "Signed statement by Petra Lang. Signature: Petra Lang. Home address: Seestrasse 44, 78462 Konstanz. Fax number +49 7531 123456"
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "phone": 1
+        },
+        "expected_total_matches": 1,
+        "challenge_personal_data_present": [
+          "first_name",
+          "last_name",
+          "signature",
+          "home_address",
+          "fax_number"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-049",
+      "description": "Invalid card should not detect",
+      "document": {
+        "document_id": "wf-doc-049",
+        "file_name": "wf_doc_049.txt",
+        "last_modified": "2026-05-30T11:49:00",
+        "content": "Reference token 4539 1488 0343 6460 and slack handle @security-team only."
+      },
+      "expected": {
+        "should_flag": false,
+        "exact_match_counts": {},
+        "expected_total_matches": 0,
+        "challenge_personal_data_present": [
+          "none"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    },
+    {
+      "test_id": "WF-050",
+      "description": "Email + multiple phones",
+      "document": {
+        "document_id": "wf-doc-050",
+        "file_name": "wf_doc_050.txt",
+        "last_modified": "2026-05-30T11:50:00",
+        "content": "Support contact: helpdesk@bosch.com. Mobile +49 151 23456789. Landline (030) 18681-0. Office address: Robert-Bosch-Platz 1, 70839 Gerlingen."
+      },
+      "expected": {
+        "should_flag": true,
+        "exact_match_counts": {
+          "email": 1,
+          "phone": 2
+        },
+        "expected_total_matches": 3,
+        "challenge_personal_data_present": [
+          "email",
+          "phone",
+          "home_address"
+        ],
+        "delta_expectation": {
+          "second_run_same_timestamp_should_skip": true,
+          "update_timestamp_should_rescan": true
+        }
+      }
+    }
+  ]
+}
