@@ -104,6 +104,14 @@ def employee_directory(request: Request):
     )
 
 
+@app.get("/data-points")
+def data_points(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="data_points.html",
+        context={}
+    )
+
 @app.get("/user-details/{employee_id}")
 def user_details(employee_id: str, request: Request):
     return templates.TemplateResponse(
@@ -336,14 +344,46 @@ _search_db: List[Dict[str, Any]] = []
 @app.on_event("startup")
 async def load_search_data():
     global _search_db
-    data_file = "scan_results.json"
+    data_file = "tests/test_cases/workflow_input_test_cases.json"
     if os.path.exists(data_file):
         try:
             with open(data_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
+                
+                # If it's the old format (list of findings)
                 if isinstance(data, list):
                     _search_db = data
-                    print(f"Loaded {len(_search_db)} findings into search DB.")
+                # If it's the new workflow_input format
+                elif isinstance(data, dict) and "cases" in data:
+                    _search_db = []
+                    import uuid
+                    for case in data["cases"]:
+                        doc = case.get("document", {})
+                        expected = case.get("expected", {})
+                        
+                        file_id = doc.get("file_name", f"doc_{case.get('test_id')}")
+                        content = doc.get("content", "")
+                        
+                        # Generate a mock finding for each expected data type
+                        expected_types = expected.get("challenge_personal_data_present", [])
+                        
+                        # Assign some files to our dummy employee BX-21842 so the dashboard populates
+                        assigned_owner = "BX-21842" if "Employee profile file" in case.get("description", "") else "unknown"
+                        
+                        for pii_type in expected_types:
+                            finding = {
+                                "finding_id": str(uuid.uuid4()),
+                                "file_id": file_id,
+                                "type": pii_type,
+                                "value": f"[{pii_type.upper()} MOCK VALUE]",
+                                "context": content[:100] + "...",
+                                "risk_level": "high" if pii_type in ("tax_id", "iban", "credit_card") else "medium",
+                                "assigned_owner": assigned_owner,
+                                "owner_resolved": False
+                            }
+                            _search_db.append(finding)
+
+                    print(f"Loaded {len(_search_db)} findings from test cases into search DB.")
         except Exception as e:
             print(f"Error loading {data_file}: {e}")
     else:

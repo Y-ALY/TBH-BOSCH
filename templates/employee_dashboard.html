@@ -204,25 +204,25 @@
 
         <div class="stats">
 
-            <div class="glass-card stat-card">
-                <h3>124</h3>
+            <a href="/data-points?filter=all" class="glass-card stat-card stat-link">
+                <h3 id="stat-total">—</h3>
                 <span>Total Files</span>
-            </div>
+            </a>
 
-            <div class="glass-card stat-card">
-                <h3>12</h3>
+            <a href="/data-points?filter=expiring" class="glass-card stat-card stat-link">
+                <h3 id="stat-expiring">—</h3>
                 <span>Expiring Soon</span>
-            </div>
+            </a>
 
-            <div class="glass-card stat-card">
-                <h3>4</h3>
+            <a href="/data-points?filter=delete" class="glass-card stat-card stat-link">
+                <h3 id="stat-delete">—</h3>
                 <span>Delete Candidates</span>
-            </div>
+            </a>
 
-            <div class="glass-card stat-card">
-                <h3>99%</h3>
+            <a href="/data-points?filter=clean" class="glass-card stat-card stat-link">
+                <h3 id="stat-compliance">—</h3>
                 <span>Compliance Score</span>
-            </div>
+            </a>
 
         </div>
 
@@ -375,6 +375,70 @@ async function handleDelete(findingId) {
         alert("Failed to resolve issue.");
     }
 }
+// --- Dynamic Data Overview Stats ---
+async function loadOverviewStats() {
+    const employeeId = "BX-21842";
+
+    try {
+        const response = await fetch(`/api/user-details/${employeeId}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const files = data.files || [];
+
+        const now = new Date();
+        const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+        let totalFiles = files.length;
+        let expiringSoon = 0;
+        let deleteCandidates = 0;
+        let cleanFiles = 0;
+
+        files.forEach(file => {
+            const deadline = new Date(file.retention_deadline);
+
+            // Delete Candidates: deadline is in the past
+            if (deadline < now) {
+                deleteCandidates++;
+            }
+            // Expiring Soon: deadline is between now and 30 days from now
+            else if (deadline >= now && deadline <= thirtyDaysFromNow) {
+                expiringSoon++;
+            }
+
+            // Clean files: empty findings array
+            if (!file.findings || file.findings.length === 0) {
+                cleanFiles++;
+            }
+        });
+
+        const complianceScore = totalFiles > 0
+            ? Math.round((cleanFiles / totalFiles) * 100)
+            : 100;
+
+        // Update the DOM
+        document.getElementById("stat-total").textContent = totalFiles;
+        document.getElementById("stat-expiring").textContent = expiringSoon;
+        document.getElementById("stat-delete").textContent = deleteCandidates;
+        document.getElementById("stat-compliance").textContent = complianceScore + "%";
+
+        // Also update the profile card compliance value
+        const profileCompliance = document.querySelector(".profile-grid strong:last-child");
+        if (profileCompliance) {
+            profileCompliance.textContent = complianceScore + "%";
+        }
+
+    } catch (error) {
+        console.error("Error loading overview stats:", error);
+        // Show fallback "N/A" instead of the dash
+        ["stat-total", "stat-expiring", "stat-delete", "stat-compliance"].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = "N/A";
+        });
+    }
+}
+
+// Fire the overview stats fetch on page load
+loadOverviewStats();
 </script>
 
 </body>

@@ -530,6 +530,18 @@ margin-bottom:8px;
 
 }
 
+/* Clickable stat-card links */
+.stat-link{
+text-decoration:none;
+color:inherit;
+display:block;
+cursor:pointer;
+}
+
+.stat-link:hover h3{
+color:#ea0016;
+}
+
 /* ALERTS */
 
 .alerts-grid{

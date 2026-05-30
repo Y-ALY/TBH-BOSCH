@@ -59,28 +59,51 @@ findings_db: List[Dict[str, Any]] = []
 # --- API Endpoints and Events ---
 
 @app.on_event("startup")
-async def load_data():
+async def load_search_data():
     """
-    Startup event to load `scan_results.json` into memory.
-    This ensures that search queries are fast as they don't involve disk I/O.
+    Startup event to load `workflow_input_test_cases.json` into memory.
     """
     global findings_db
-    data_file = "scan_results.json"
-    
+    data_file = "tests/test_cases/workflow_input_test_cases.json"
     if os.path.exists(data_file):
         try:
             with open(data_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
+                
+                # If it's the old format (list of findings)
                 if isinstance(data, list):
                     findings_db = data
-                    print(f"Successfully loaded {len(findings_db)} findings into memory from {data_file}.")
-                else:
-                    print(f"Warning: Data in {data_file} is not a list. Check your pipeline output.")
+                # If it's the new workflow_input format
+                elif isinstance(data, dict) and "cases" in data:
+                    findings_db = []
+                    for case in data["cases"]:
+                        doc = case.get("document", {})
+                        expected = case.get("expected", {})
+                        
+                        file_id = doc.get("file_name", f"doc_{case.get('test_id')}")
+                        content = doc.get("content", "")
+                        
+                        expected_types = expected.get("challenge_personal_data_present", [])
+                        assigned_owner = "BX-21842" if "Employee profile file" in case.get("description", "") else "unknown"
+                        
+                        for pii_type in expected_types:
+                            finding = {
+                                "finding_id": str(uuid.uuid4()),
+                                "file_id": file_id,
+                                "type": pii_type,
+                                "value": f"[{pii_type.upper()} MOCK VALUE]",
+                                "context": content[:100] + "...",
+                                "risk_level": "high" if pii_type in ("tax_id", "iban", "credit_card") else "medium",
+                                "assigned_owner": assigned_owner,
+                                "owner_resolved": False
+                            }
+                            findings_db.append(finding)
+
+                    print(f"Loaded {len(findings_db)} findings from test cases into search DB.")
         except Exception as e:
-            print(f"Error loading {data_file}: {e}")
+            logger.error("Error loading %s: %s", data_file, e)
     else:
-        print(f"Warning: {data_file} not found. Starting with an empty database.")
-        print("Run the data discovery pipeline first to generate this file.")
+        logger.warning("%s not found. Search will return empty results.", data_file)
 
 @app.get("/api/search", response_model=SearchResponse)
 async def search_findings(

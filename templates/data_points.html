@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Points | Bosch GDPR Data Discovery</title>
+    <!-- Use same Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Reusing existing dashboard styles to keep consistency -->
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <style>
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+        }
+
+        .back-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: opacity 0.2s ease;
+        }
+
+        .back-link:hover {
+            opacity: 0.8;
+        }
+
+        .data-points-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+        }
+
+        .data-card {
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .data-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .data-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+            padding-bottom: 1rem;
+        }
+
+        .data-card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #1f2937;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-badge {
+            font-size: 0.75rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 99px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-danger {
+            background-color: rgba(226, 0, 26, 0.1);
+            color: #E2001A;
+            border: 1px solid rgba(226, 0, 26, 0.2);
+        }
+
+        .status-warning {
+            background-color: rgba(255, 159, 10, 0.15);
+            color: #d97706;
+            border: 1px solid rgba(255, 159, 10, 0.25);
+        }
+
+        .status-success {
+            background-color: rgba(48, 209, 88, 0.15);
+            color: #16a34a;
+            border: 1px solid rgba(48, 209, 88, 0.25);
+        }
+
+        .status-info {
+            background-color: rgba(0, 123, 192, 0.1);
+            color: #007bc0;
+            border: 1px solid rgba(0, 123, 192, 0.2);
+        }
+
+        .data-card-body {
+            color: #4b5563;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .data-card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85rem;
+            color: #6b7280;
+            margin-top: auto;
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
+            padding-top: 1rem;
+        }
+
+        .finding-tag {
+            background: #f4f6f8;
+            padding: 0.35rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            border: 1px solid #e5e7eb;
+            color: #4b5563;
+            font-weight: 500;
+        }
+        
+        .findings-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 0.75rem;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 4rem;
+            color: #6b7280;
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="topbar">
+        <div class="left-top">
+            <span class="brand">Privacy Portal</span>
+        </div>
+        <div class="account">
+            <button class="account-btn">
+                <div class="avatar-small">EA</div>
+                <div class="account-info">
+                    <strong>Eyad Adly</strong>
+                    <span>Employee</span>
+                </div>
+            </button>
+        </div>
+    </div>
+
+    <div class="sidebar" id="sidebar">
+        <a href="/employee-dashboard">
+            <span class="icon">📊</span>
+            <span class="label">Dashboard</span>
+        </a>
+        <a href="#" class="active">
+            <span class="icon">📑</span>
+            <span class="label">Data Points</span>
+        </a>
+        <a href="/employee-directory">
+            <span class="icon">📁</span>
+            <span class="label">File Explorer</span>
+        </a>
+    </div>
+
+    <div class="main" style="padding: 40px;">
+        <header class="page-header">
+            <div>
+                <a href="/employee-dashboard" class="back-link">
+                    &larr; Back to Dashboard
+                </a>
+                <h1 id="page-title" style="margin-top: 1rem; color: #1f2937;">Loading Data Points...</h1>
+            </div>
+        </header>
+
+        <section id="data-points-container" class="data-points-grid">
+            <!-- Data cards will be injected here -->
+        </section>
+    </div>
+
+    <script>
+        // Mapping of filters to page titles
+        const titles = {
+            'all': 'Total Files Data Points',
+            'expiring': 'Expiring Soon Data Points',
+            'delete': 'Delete Candidates Data Points',
+            'clean': 'Compliance Score (Clean Files)'
+        };
+
+        async function loadDataPoints() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const filter = urlParams.get('filter') || 'all';
+            
+            document.getElementById('page-title').textContent = titles[filter] || 'Data Points';
+            
+            const employeeId = "BX-21842";
+            const container = document.getElementById('data-points-container');
+
+            try {
+                const response = await fetch(`/api/user-details/${employeeId}`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                const files = data.files || [];
+
+                const now = new Date();
+                const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+                let filteredFiles = [];
+
+                files.forEach(file => {
+                    const deadline = new Date(file.retention_deadline);
+                    const findings = file.findings || [];
+                    const isClean = findings.length === 0;
+
+                    if (filter === 'all') {
+                        filteredFiles.push(file);
+                    } else if (filter === 'delete' && deadline < now) {
+                        filteredFiles.push(file);
+                    } else if (filter === 'expiring' && deadline >= now && deadline <= thirtyDaysFromNow) {
+                        filteredFiles.push(file);
+                    } else if (filter === 'clean' && isClean) {
+                        filteredFiles.push(file);
+                    }
+                });
+
+                if (filteredFiles.length === 0) {
+                    container.innerHTML = `
+                        <div class="glass-card empty-state">
+                            No files found for this category.
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = '';
+                filteredFiles.forEach(file => {
+                    const deadline = new Date(file.retention_deadline);
+                    let statusClass = 'status-info';
+                    let statusText = 'Normal';
+                    
+                    if (deadline < now) {
+                        statusClass = 'status-danger';
+                        statusText = 'Overdue for Deletion';
+                    } else if (deadline >= now && deadline <= thirtyDaysFromNow) {
+                        statusClass = 'status-warning';
+                        statusText = 'Expiring Soon';
+                    } else if (file.findings && file.findings.length === 0) {
+                        statusClass = 'status-success';
+                        statusText = 'Clean / Compliant';
+                    }
+
+                    const findingsHtml = (file.findings && file.findings.length > 0) 
+                        ? file.findings.map(f => `<span class="finding-tag">${f.category} (${f.risk_level})</span>`).join('')
+                        : '<span style="color: #6b7280; font-size: 0.9rem;">No sensitive data found</span>';
+
+                    const card = document.createElement('div');
+                    card.className = 'glass-card data-card';
+                    card.style.cursor = 'pointer';
+                    card.onclick = () => {
+                        window.location.href = `/user-details/${employeeId}`;
+                    };
+                    card.innerHTML = `
+                        <div class="data-card-header">
+                            <div class="data-card-title">
+                                📄 ${file.file_id || 'Unknown Document'}
+                            </div>
+                            <span class="status-badge ${statusClass}">${statusText}</span>
+                        </div>
+                        <div class="data-card-body">
+                            <div>
+                                <strong style="color: #374151;">Detected Entities:</strong>
+                                <div class="findings-container">${findingsHtml}</div>
+                            </div>
+                        </div>
+                        <div class="data-card-footer">
+                            <span>Retention Deadline: ${deadline.toLocaleDateString()}</span>
+                            <span>Findings: ${file.findings ? file.findings.length : 0}</span>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+
+            } catch (error) {
+                console.error("Error loading data points:", error);
+                container.innerHTML = `
+                    <div class="glass-card empty-state status-danger" style="background: rgba(255, 69, 58, 0.1);">
+                        Failed to load data points. Please try again later.
+                    </div>
+                `;
+            }
+        }
+
+        loadDataPoints();
+    </script>
+</body>
+</html>
