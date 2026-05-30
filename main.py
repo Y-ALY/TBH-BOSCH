@@ -1,9 +1,22 @@
-from fastapi import FastAPI, Depends
+
+from fastapi import FastAPI, Depends, Request
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
+
+
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import database
 
 app = FastAPI(title="Bosch GDPR Scan Engine API")
+
+app.mount(
+    "/static",
+    StaticFiles(directory="static"),
+    name="static"
+)
+
+templates = Jinja2Templates(directory="templates")
 
 # Allow the frontend to talk to this backend without security blocks
 app.add_middleware(
@@ -15,11 +28,7 @@ app.add_middleware(
 )
 
 
-from fastapi import FastAPI, Depends
-from sqlalchemy.orm import Session
-import database
 
-app = FastAPI(title="Bosch GDPR Scan Engine API")
 
 # Dependency to get the DB session
 def get_db():
@@ -37,12 +46,49 @@ def mask_sensitive_data(text: str) -> str:
     return f"{text[0]}{'*' * (len(text) - 2)}{text[-1]}"
 
 
-
 @app.get("/")
-def read_root():
-    return {"status": "Active", "message": "GDPR Core Engine Running"}
+def login_page(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={}
+    )
+
+from fastapi import Form
+from fastapi.responses import RedirectResponse
+
+@app.post("/login")
+def login(
+    role: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...)
+):
+    
+    # Hackathon demo credentials
+
+    if role == "employee":
+        return RedirectResponse(
+            url="/employee-dashboard",
+            status_code=303
+        )
+
+    if role == "admin":
+        return RedirectResponse(
+            url="/admin-dashboard",
+            status_code=303
+        )
+
+    return {"error": "Invalid login"}
 
 
+
+@app.get("/employee-dashboard")
+def employee_dashboard(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="employee_dashboard.html",
+        context={}
+    )
 
 
 

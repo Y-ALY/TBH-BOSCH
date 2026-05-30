@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Privacy Portal</title>
+
+<link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+
+<body>
+
+<div class="topbar">
+
+    <div class="left-top">
+
+        <button id="menuToggle" class="menu-btn">
+            ☰
+        </button>
+
+        <span class="brand">
+            Privacy Portal
+        </span>
+
+    </div>
+
+ <div class="account">
+
+    <button class="account-btn" onclick="toggleAccountMenu()">
+
+        <div class="avatar-small">
+            EA
+        </div>
+
+        <div class="account-info">
+            <strong>Eyad Adly</strong>
+            <span>Employee</span>
+        </div>
+
+    </button>
+
+    <div class="account-menu" id="accountMenu">
+
+        <a href="#">
+            My Profile
+        </a>
+
+        <a href="#">
+            Switch User
+        </a>
+
+        <a href="/">
+            Logout
+        </a>
+
+    </div>
+
+</div>
+</div>
+
+<div class="sidebar" id="sidebar">
+
+    <a href="#profile">
+        <span class="icon">👤</span>
+        <span class="label">Profile</span>
+    </a>
+
+    <a href="#alerts">
+        <span class="icon">🚩</span>
+        <span class="label">Flagged Files</span>
+    </a>
+
+    <a href="#overview">
+        <span class="icon">📊</span>
+        <span class="label">Overview</span>
+    </a>
+
+    <a href="#actions">
+        <span class="icon">⚡</span>
+        <span class="label">Actions</span>
+    </a>
+
+</div>
+
+<div class="main">
+
+    <section class="hero">
+
+        <h1>
+            Privacy Dashboard
+        </h1>
+
+        <p>
+            Review personal data, monitor retention policies,
+            and manage GDPR requests from a single workspace.
+        </p>
+
+    </section>
+
+    <section id="profile" class="glass-card profile-card">
+
+        <div class="profile-left">
+
+            <div class="profile-avatar">
+                EA
+            </div>
+
+        </div>
+
+        <div class="profile-right">
+
+            <h2>Eyad Adly</h2>
+
+            <p class="position">
+                Software Engineering Intern
+            </p>
+
+            <div class="profile-grid">
+
+                <div>
+                    <span>Department</span>
+                    <strong>Engineering</strong>
+                </div>
+
+                <div>
+                    <span>Location</span>
+                    <strong>Heilbronn</strong>
+                </div>
+
+                <div>
+                    <span>Employee ID</span>
+                    <strong>BX-21842</strong>
+                </div>
+
+                <div>
+                    <span>Compliance</span>
+                    <strong>98%</strong>
+                </div>
+
+            </div>
+
+        </div>
+
+    </section>
+
+    <section id="alerts">
+
+        <div class="section-header">
+
+            <h2>Recently Flagged Documents</h2>
+
+        </div>
+
+        <div class="alerts-grid">
+
+            <div class="glass-card alert-card">
+
+                <h3>passport.pdf</h3>
+
+                <p>Identity Document</p>
+
+                <span class="danger">
+                    Retention Expired
+                </span>
+
+            </div>
+
+            <div class="glass-card alert-card">
+
+                <h3>salary_2023.pdf</h3>
+
+                <p>Financial Data</p>
+
+                <span class="warning">
+                    Expiring Soon
+                </span>
+
+            </div>
+
+            <div class="glass-card alert-card">
+
+                <h3>contract_old.pdf</h3>
+
+                <p>Employment Data</p>
+
+                <span class="danger">
+                    Delete Candidate
+                </span>
+
+            </div>
+
+        </div>
+
+    </section>
+
+    <section id="overview">
+
+        <div class="section-header">
+
+            <h2>Data Overview</h2>
+
+        </div>
+
+        <div class="stats">
+
+            <div class="glass-card stat-card">
+                <h3>124</h3>
+                <span>Total Files</span>
+            </div>
+
+            <div class="glass-card stat-card">
+                <h3>12</h3>
+                <span>Expiring Soon</span>
+            </div>
+
+            <div class="glass-card stat-card">
+                <h3>4</h3>
+                <span>Delete Candidates</span>
+            </div>
+
+            <div class="glass-card stat-card">
+                <h3>99%</h3>
+                <span>Compliance Score</span>
+            </div>
+
+        </div>
+
+    </section>
+
+    <section id="actions">
+
+        <div class="section-header">
+
+            <h2>Quick Actions</h2>
+
+        </div>
+
+        <div class="action-grid">
+
+            <button class="action-btn">
+                Request Data Export
+            </button>
+
+            <button class="action-btn">
+                Request Deletion
+            </button>
+
+            <button class="action-btn">
+                Correct Information
+            </button>
+
+            <button class="action-btn">
+                Restrict Processing
+            </button>
+
+        </div>
+
+    </section>
+
+    <section class="glass-card explorer">
+
+        <h2>
+            Explore All Files
+        </h2>
+
+        <p>
+            Search every file associated with your account,
+            inspect retention periods and review flagged content.
+        </p>
+
+        <button class="explore-btn">
+
+            Open File Explorer →
+
+        </button>
+
+    </section>
+
+</div>
+
+<script>
+
+const menuBtn =
+document.getElementById("menuToggle");
+
+const sidebar =
+document.getElementById("sidebar");
+
+const main =
+document.querySelector(".main");
+
+menuBtn.addEventListener("click", () => {
+
+    sidebar.classList.toggle("collapsed");
+
+    main.classList.toggle("expanded");
+
+});
+
+</script>
+
+</body>
+</html>
