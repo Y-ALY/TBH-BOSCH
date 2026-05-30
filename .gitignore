@@ -9,3 +9,4 @@ __pycache__/
 
 # Environment Variables (CRITICAL for your €100 API key later)
 .env
+.DS_Store

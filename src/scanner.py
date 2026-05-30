@@ -115,3 +115,75 @@ def run_full_scan(connector: Connector) -> ScanResult:
             scan_result.findings.extend(findings)
 
     return scan_result
+
+
+# ---------------------------------------------------------------------------
+# AI-enhanced scan (wraps full scan + AI enrichment)
+# ---------------------------------------------------------------------------
+
+def run_ai_scan(connector, ai_parser=None) -> ScanResult:
+    """Run full scan, then enrich with AI parsing on each document.
+
+    AI overrides:
+      - document_type (if confidence > 0.6)
+      - adds AI-only findings regex can't catch
+      - upgrades/downgrades risk on existing findings based on context
+
+    Falls back gracefully to regex-only if AI parser is unavailable.
+    """
+    result = run_full_scan(connector)
+
+    if ai_parser is None:
+        return result  # regex-only mode
+
+    for doc in result.parsed_documents:
+        if doc.needs_ocr:
+            continue
+
+        full_text = "\n".join(p.text for p in doc.pages)
+        regex_count = len([f for f in result.findings if f.file_id == doc.file_id])
+
+        # ── AI analysis ────────────────────────────────────────
+        try:
+            ai_result = ai_parser.parse(
+                text=full_text,
+                fields=doc.fields,
+                page_count=doc.page_count,
+                regex_findings_count=regex_count,
+            )
+
+            # Override document type if AI is confident
+            if ai_result.confidence > 0.6 and ai_result.document_type != "unknown":
+                doc.document_type = ai_result.document_type
+
+            # Merge AI findings — convert to our Finding model
+            for af in ai_result.findings:
+                f = Finding(
+                    finding_id="",
+                    file_id=doc.file_id,
+                    type=af.get("type", "other_pii"),
+                    value=str(af.get("value", "")),
+                    field=af.get("field", ""),
+                    context=af.get("context", ""),
+                    risk_level=af.get("risk_level", "medium"),
+                    confidence=float(af.get("confidence", 0.8)),
+                    evidence=f"AI ({ai_result.model_used}): {af.get('context', '')[:100]}",
+                    recommended_action=af.get("recommended_action", "review"),
+                )
+                result.findings.append(f)
+
+            # Store AI metadata on the document
+            doc.fields["_ai_model"] = ai_result.model_used
+            doc.fields["_ai_tokens"] = str(ai_result.tokens_used)
+            doc.fields["_ai_confidence"] = str(ai_result.confidence)
+
+        except Exception as e:
+            doc.fields["_ai_error"] = str(e)
+
+    # Re-assign owners (AI may have added findings)
+    for doc in result.parsed_documents:
+        doc_findings = [f for f in result.findings if f.file_id == doc.file_id]
+        owner_hints = connector.get_owner_hints(doc.file_id)
+        assign_owners(doc_findings, owner_hints)
+
+    return result

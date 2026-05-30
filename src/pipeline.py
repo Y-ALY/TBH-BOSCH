@@ -17,7 +17,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .connector import LocalSampleRepoConnector
-from .scanner import run_full_scan
+from .scanner import run_full_scan, run_ai_scan
 from .review import create_review_queue, process_review_action, export_review_queue
 from .delta import save_state, compare_delta
 
@@ -68,6 +68,52 @@ def cmd_full_scan(args: argparse.Namespace) -> int:
     unresolved = sum(1 for f in result.findings if not f.owner_resolved)
     if unresolved:
         print(f"\n⚠  {unresolved} finding(s) with unresolved owner → escalated to DPO")
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# ai-scan
+# ---------------------------------------------------------------------------
+
+def cmd_ai_scan(args: argparse.Namespace) -> int:
+    from .ai_parser import AIParser
+
+    connector = LocalSampleRepoConnector(args.repo, args.owner_hints)
+
+    # Try to init AI parser
+    try:
+        ai = AIParser(model=args.model)
+        print(f"🤖 AI parser: {ai.model}")
+    except (ValueError, ImportError) as e:
+        print(f"⚠️  AI parser unavailable: {e}")
+        print("   Falling back to regex-only mode.")
+        ai = None
+
+    result = run_ai_scan(connector, ai)
+
+    out_dir = Path(args.output)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    scan_path = out_dir / f"scan_{result.scan_id}.json"
+    _write_json(scan_path, _scan_result_to_dict(result))
+    print(f"Scan result → {scan_path}")
+
+    # Count AI vs regex findings
+    ai_count = sum(1 for f in result.findings if "AI" in f.evidence)
+    regex_count = len(result.findings) - ai_count
+
+    print(f"\n{'='*60}")
+    print(f"Scan ID:       {result.scan_id}")
+    print(f"Files scanned: {result.files_scanned}")
+    print(f"Findings:      {len(result.findings)} ({regex_count} regex + {ai_count} AI)")
+    print(f"Change token:  {result.change_token[:16]}...")
+
+    finding_types: dict[str, int] = {}
+    for f in result.findings:
+        finding_types[f.type] = finding_types.get(f.type, 0) + 1
+    print(f"\nFinding types:")
+    for ft, count in sorted(finding_types.items()):
+        print(f"  {ft}: {count}")
 
     return 0
 
@@ -245,6 +291,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_full.add_argument("--owner-hints", default=None, help="Path to owner hints JSON")
     p_full.add_argument("--output", default="data/output", help="Output directory for results")
     p_full.set_defaults(func=cmd_full_scan)
+
+    # ai-scan
+    p_ai = sub.add_parser("ai-scan", help="Run full scan with AI enrichment (needs OPENROUTER_API_KEY)")
+    p_ai.add_argument("--repo", required=True, help="Path to PDF directory")
+    p_ai.add_argument("--owner-hints", default=None, help="Path to owner hints JSON")
+    p_ai.add_argument("--output", default="data/output", help="Output directory for results")
+    p_ai.add_argument("--model", default=None, help="OpenRouter model (default: anthropic/claude-sonnet-4)")
+    p_ai.set_defaults(func=cmd_ai_scan)
 
     # delta-scan
     p_delta = sub.add_parser("delta-scan", help="Compare current state against previous baseline")
