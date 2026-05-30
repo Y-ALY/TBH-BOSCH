@@ -304,7 +304,6 @@ background:#f4f6f8;
 }
 
 /* SIDEBAR */
-CSS
 /* --- STRICT SIDEBAR CONTAINER --- */
 .sidebar {
     position: fixed;
@@ -360,11 +359,21 @@ CSS
     transition: all 0.2s ease;
 }
 
-/* --- HOVER EFFECT (Slide & Gray) --- */
+/* --- HOVER EFFECT --- */
 .sidebar a:hover {
-    background: #f3f4f6;
-    color: #1f2937;
-    transform: translateX(4px); /* Satisfying slight slide to the right */
+    color: white;
+    background: linear-gradient(90deg, #ea0016, #007bc0, #ea0016);
+    background-size: 300% 100%;
+    animation: boschFlow 6s linear infinite;
+    transform: translateX(4px);
+    box-shadow: 0 10px 25px rgba(0,123,192,.2);
+    border-color: transparent;
+}
+
+.sidebar a:hover svg, .sidebar a:hover .icon {
+    opacity: 1;
+    stroke: white;
+    color: white;
 }
 
 /* --- CLICK EFFECT (Shrink bounce) --- */
