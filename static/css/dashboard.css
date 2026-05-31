@@ -216,6 +216,10 @@ body::after {
     background: var(--bg-card-hover);
 }
 
+body.light .menu-btn:hover {
+    background: rgba(0,0,0,0.06);
+}
+
 /* ---- Theme Toggle Button ---- */
 .theme-toggle {
     font-size: 0; /* Hide text if any */
@@ -261,6 +265,7 @@ body.light .theme-toggle::after {
     border-radius: var(--radius-md);
     transition: all 0.3s ease;
     animation: subtlePulse 4s infinite;
+    color: var(--text-primary);
 }
 
 @keyframes subtlePulse {
@@ -271,27 +276,31 @@ body.light .theme-toggle::after {
 
 .account-btn:hover {
     background: var(--bg-card-hover);
-    border-color: var(--border-subtle);
+    border-color: var(--border-hover);
     animation: none;
 }
 
 body.light .account-btn {
     background: rgba(0,0,0,0.03);
+    color: var(--text-primary);
 }
 
 body.light .account-btn:hover {
-    background: rgba(0,0,0,0.06);
+    background: rgba(0,0,0,0.08);
+    border-color: var(--border-hover);
 }
 
 .account-info {
     display: flex;
     flex-direction: column;
     text-align: left;
+    color: var(--text-primary);
 }
 
 .account-info strong {
     font-size: 14px;
     font-weight: 600;
+    color: var(--text-primary);
 }
 
 .account-info span {
@@ -348,6 +357,11 @@ body.light .account-btn:hover {
 
 .account-menu a:hover {
     background: var(--bg-card-hover);
+    color: var(--text-primary);
+}
+
+body.light .account-menu a:hover {
+    background: rgba(0,0,0,0.12);
     color: var(--text-primary);
 }
 
