@@ -179,6 +179,7 @@ def run_streaming_scan(
                     parse_time_ms=parse_time_ms,
                     regex_time_ms=regex_time_ms,
                     io_time_ms=io_time_ms,
+                    text=full_text,
                 )
 
                 # ── 6. Emit result immediately ──

@@ -241,6 +241,7 @@ class FileScanResult:
     parse_time_ms: float = 0.0
     regex_time_ms: float = 0.0
     io_time_ms: float = 0.0
+    text: str = ""              # Full document text (for AI enrichment queue)
     error: str | None = None  # If set, this file had a non-fatal error
 
     @property

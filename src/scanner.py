@@ -216,3 +216,85 @@ def run_ai_scan(connector, ai_parser=None, *, db_session=None) -> ScanResult:
         )
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Layered scan — streaming regex scan + async AI enrichment
+# ---------------------------------------------------------------------------
+
+def run_layered_scan(
+    connector,
+    file_refs,
+    options: "ScanOptions | None" = None,
+    ai_parser=None,
+    *,
+    db_session=None,
+    on_result=None,
+    on_error=None,
+) -> "tuple[ScanMetrics, object]":
+    """Streaming scan with async AI enrichment.
+
+    1. Run streaming scan (regex only) via run_streaming_scan()
+    2. For each FileScanResult, pass through AIGate
+    3. If gate says yes -> enqueue in AIQueue
+    4. Return ScanMetrics immediately (don't wait for AI)
+    5. AIQueue workers process in background
+
+    Returns:
+        (ScanMetrics, AIQueue) — metrics available immediately,
+        AI results accessible via ai_queue.get_results(file_id)
+    """
+    from .models import ScanOptions as _ScanOptions
+    from .models import ScanMetrics
+    from .streaming_scanner import run_streaming_scan
+    from .ai_queue import AIGate, AIQueue, AIQueueItem
+
+    if options is None:
+        options = _ScanOptions()
+
+    # Build AI queue (graceful fallback if no parser)
+    gate = AIGate()
+    ai_queue = AIQueue(ai_parser=ai_parser)
+
+    # Start background workers immediately
+    ai_queue.start()
+
+    def _on_result(file_result) -> None:
+        """Streaming scan callback: gate check + enqueue."""
+        # Forward to caller's callback if provided
+        if callable(on_result):
+            on_result(file_result)
+
+        # Gate check
+        if not gate.should_enrich(file_result, options):
+            return
+
+        # Build queue item and enqueue
+        risk_levels = []
+        for f in file_result.findings:
+            if hasattr(f, "risk_level"):
+                risk_levels.append(f.risk_level)
+
+        item = AIQueueItem(
+            scan_id="",  # filled by metrics or caller
+            file_id=file_result.file_ref.file_id,
+            document_type=file_result.document_type,
+            regex_findings_count=len(file_result.findings),
+            risk_levels=risk_levels,
+            text=file_result.text,
+            fields=dict(file_result.fields),
+            page_count=file_result.page_count,
+        )
+        ai_queue.enqueue(item)
+
+    # Run streaming scan with AI off (AI happens async in background)
+    metrics = run_streaming_scan(
+        connector,
+        file_refs,
+        _ScanOptions(mode=options.mode, ai_mode="off", max_workers=options.max_workers),
+        db_session=db_session,
+        on_result=_on_result,
+        on_error=on_error,
+    )
+
+    return metrics, ai_queue
