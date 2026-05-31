@@ -1,6 +1,6 @@
 {
-  "scan_id": "scan-f07f3d45",
-  "timestamp": "2026-05-31T15:02:50.257048",
+  "scan_id": "scan-a9a3b368",
+  "timestamp": "2026-05-31T15:02:38.481587",
   "connector_type": "LocalSampleRepoConnector",
   "files": {
     "local:medical_aarón_vergara_coello_v3_7031.pdf": {
