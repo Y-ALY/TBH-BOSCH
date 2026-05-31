@@ -4,12 +4,26 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>Privacy Portal</title>
+<title>Privacy Portal — Dashboard</title>
+<meta name="description" content="Your personal GDPR compliance dashboard. Review flagged files, manage retention policies, and exercise your data rights.">
 
-<link rel="stylesheet" href="/static/css/dashboard.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="/static/css/dashboard.css?v=3">
+
+<!-- Apply saved theme before paint to avoid flash -->
+<script>
+    if (localStorage.getItem("pg-theme") === "light") {
+        document.documentElement.style.background = "#f3f4f8";
+    }
+</script>
 </head>
 
 <body>
+
+<canvas id="particles"></canvas>
 
 <div class="topbar">
 
@@ -25,38 +39,43 @@
 
     </div>
 
- <div class="account">
+    <div class="topbar-right" style="display: flex; align-items: center; gap: 14px;">
 
-    <button class="account-btn" onclick="toggleAccountMenu()">
+        <button class="menu-btn theme-toggle" id="themeToggleBtn" onclick="window.toggleDarkMode()" title="Toggle Theme" type="button"></button>
 
-        <div class="avatar-small">
-            {{ user.first_name[0] }}{{ user.last_name[0] }}
+        <div class="account">
+
+            <button class="account-btn" onclick="toggleAccountMenu()">
+
+                <div class="avatar-small">
+                    {{ user.first_name[0] }}{{ user.last_name[0] }}
+                </div>
+
+                <div class="account-info">
+                    <strong>{{ user.first_name }} {{ user.last_name }}</strong>
+                    <span>Employee</span>
+                </div>
+
+            </button>
+
+            <div class="account-menu" id="accountMenu">
+
+                <a href="#">
+                    My Profile
+                </a>
+
+                <a href="#">
+                    Switch User
+                </a>
+
+                <a href="/">
+                    Logout
+                </a>
+
+            </div>
+
         </div>
-
-        <div class="account-info">
-            <strong>{{ user.first_name }} {{ user.last_name }}</strong>
-            <span>Employee</span>
-        </div>
-
-    </button>
-
-    <div class="account-menu" id="accountMenu">
-
-        <a href="#">
-            My Profile
-        </a>
-
-        <a href="#">
-            Switch User
-        </a>
-
-        <a href="/">
-            Logout
-        </a>
-
     </div>
-
-</div>
 </div>
 
 <div class="sidebar" id="sidebar">
@@ -100,7 +119,7 @@
 
 <div class="main">
 
-    <section class="hero">
+    <section class="hero reveal">
 
         <h1>
             Privacy Dashboard
@@ -113,7 +132,7 @@
 
     </section>
 
-    <section id="profile" class="glass-card profile-card">
+    <section id="profile" class="glass-card profile-card reveal">
 
         <div class="profile-left">
 
@@ -136,12 +155,12 @@
                     <span>Employee ID</span>
                     <strong>{{ user.employee_id }}</strong>
                 </div>
-                </div>
+            </div>
         </div>
 
     </section>
 
-    <section id="alerts">
+    <section id="alerts" class="reveal">
 
         <div class="section-header">
 
@@ -191,7 +210,7 @@
 
     </section>
 
-    <section id="overview">
+    <section id="overview" class="reveal">
 
         <div class="section-header">
 
@@ -225,7 +244,7 @@
 
     </section>
 
-    <section id="actions">
+    <section id="actions" class="reveal">
 
         <div class="section-header">
 
@@ -255,7 +274,7 @@
 
     </section>
 
-    <section class="glass-card explorer">
+    <section class="glass-card explorer reveal">
 
         <h2>
             Explore All Files
@@ -278,8 +297,6 @@
 
 <script>
 
-
-
 // --- Account Menu Toggle ---
 function toggleAccountMenu() {
     const menu = document.getElementById("accountMenu");
@@ -291,7 +308,6 @@ document.addEventListener("click", function(event) {
     const accountBtn = document.querySelector(".account-btn");
     const accountMenu = document.getElementById("accountMenu");
     
-    // If the click is outside the button and the menu, hide the menu
     if (!accountBtn.contains(event.target) && !accountMenu.contains(event.target)) {
         accountMenu.classList.remove("show-menu");
     }
@@ -305,7 +321,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     
     try {
         const response = await fetch(`/api/employee/files/${employeeId}`);
-        // ... rest of the code remains the same
         const data = await response.json();
         
         // Find the container where the cards live
@@ -316,7 +331,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         
         // If the database is clean, show a success message
         if (!data.findings || data.findings.length === 0) {
-            alertsGrid.innerHTML = "<p style='color: #666;'>No compliance violations found. Great job!</p>";
+            alertsGrid.innerHTML = "<p style='color: var(--text-secondary);'>No compliance violations found. Great job!</p>";
             return;
         }
         
@@ -328,12 +343,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             card.innerHTML = `
                 <h3 style="word-break: break-all;">${finding.file_name}</h3>
                 <p>${finding.category}</p>
-                <div style="margin-top: 10px; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 6px; font-family: monospace;">
+                <div style="margin-top: 10px; background: rgba(255,255,255,0.04); padding: 8px; border-radius: 6px; font-family: 'Space Grotesk', monospace; font-size: 13px; color: var(--text-secondary);">
                     ${finding.flagged_snippet}
                 </div>
                 <button 
                     onclick="handleDelete(${finding.finding_id})"
-                    style="margin-top: 15px; padding: 6px 12px; background: #ea0016; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                    style="margin-top: 15px; padding: 8px 16px; background: linear-gradient(90deg, #ea0016, #d10000); color: white; border: none; border-radius: 8px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px; transition: all 0.3s ease;">
                     Resolve Issue
                 </button>
             `;
@@ -357,7 +372,6 @@ async function handleDelete(findingId) {
         });
         
         if(response.ok) {
-            // Reload the page to refresh the grid
             window.location.reload(); 
         }
     } catch (error) {
@@ -385,16 +399,13 @@ async function loadOverviewStats() {
         files.forEach(file => {
             const deadline = new Date(file.retention_deadline);
 
-            // Delete Candidates: deadline is in the past
             if (deadline < now) {
                 deleteCandidates++;
             }
-            // Expiring Soon: deadline is between now and 30 days from now
             else if (deadline >= now && deadline <= thirtyDaysFromNow) {
                 expiringSoon++;
             }
 
-            // Clean files: empty findings array
             if (!file.findings || file.findings.length === 0) {
                 cleanFiles++;
             }
@@ -404,13 +415,11 @@ async function loadOverviewStats() {
             ? Math.round((cleanFiles / totalFiles) * 100)
             : 100;
 
-        // Update the DOM
         document.getElementById("stat-total").textContent = totalFiles;
         document.getElementById("stat-expiring").textContent = expiringSoon;
         document.getElementById("stat-delete").textContent = deleteCandidates;
         document.getElementById("stat-compliance").textContent = complianceScore + "%";
 
-        // Also update the profile card compliance value
         const profileCompliance = document.querySelector(".profile-grid strong:last-child");
         if (profileCompliance) {
             profileCompliance.textContent = complianceScore + "%";
@@ -418,7 +427,6 @@ async function loadOverviewStats() {
 
     } catch (error) {
         console.error("Error loading overview stats:", error);
-        // Show fallback "N/A" instead of the dash
         ["stat-total", "stat-expiring", "stat-delete", "stat-compliance"].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.textContent = "N/A";
@@ -431,7 +439,7 @@ loadOverviewStats();
 
 
 </script>
-<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/dashboard.js?v=3"></script>
 
 </body>
 </html>

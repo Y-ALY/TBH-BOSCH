@@ -3,11 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Data Points | Bosch GDPR Data Discovery</title>
-    <!-- Use same Google Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Reusing existing dashboard styles to keep consistency -->
-    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <title>Data Points | Privacy Guardian</title>
+    <meta name="description" content="View and explore GDPR data points, retention deadlines, and compliance findings.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=3">
+
+    <script>
+        if (localStorage.getItem("pg-theme") === "light") {
+            document.documentElement.style.background = "#f3f4f8";
+        }
+    </script>
+
     <style>
         .page-header {
             display: flex;
@@ -17,17 +27,19 @@
         }
 
         .back-link {
-            color: var(--accent);
+            color: var(--accent-blue);
             text-decoration: none;
             font-weight: 500;
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            transition: opacity 0.2s ease;
+            transition: all 0.3s ease;
+            font-size: 14px;
         }
 
         .back-link:hover {
-            opacity: 0.8;
+            color: var(--accent-red);
+            transform: translateX(-4px);
         }
 
         .data-points-grid {
@@ -41,26 +53,25 @@
             display: flex;
             flex-direction: column;
             gap: 1rem;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
         }
 
         .data-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            transform: translateY(-3px);
         }
 
         .data-card-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+            border-bottom: 1px solid var(--border-subtle);
             padding-bottom: 1rem;
         }
 
         .data-card-title {
             font-size: 1.1rem;
             font-weight: 600;
-            color: #1f2937;
+            color: var(--text-primary);
             display: flex;
             align-items: center;
             gap: 0.5rem;
@@ -76,31 +87,31 @@
         }
 
         .status-danger {
-            background-color: rgba(226, 0, 26, 0.1);
-            color: #E2001A;
-            border: 1px solid rgba(226, 0, 26, 0.2);
+            background-color: rgba(234,0,22,0.12);
+            color: #ff4d6a;
+            border: 1px solid rgba(234,0,22,0.2);
         }
 
         .status-warning {
-            background-color: rgba(255, 159, 10, 0.15);
-            color: #d97706;
-            border: 1px solid rgba(255, 159, 10, 0.25);
+            background-color: rgba(245,166,35,0.12);
+            color: #f5a623;
+            border: 1px solid rgba(245,166,35,0.2);
         }
 
         .status-success {
-            background-color: rgba(48, 209, 88, 0.15);
-            color: #16a34a;
-            border: 1px solid rgba(48, 209, 88, 0.25);
+            background-color: rgba(16,185,129,0.12);
+            color: #10b981;
+            border: 1px solid rgba(16,185,129,0.2);
         }
 
         .status-info {
-            background-color: rgba(0, 123, 192, 0.1);
-            color: #007bc0;
-            border: 1px solid rgba(0, 123, 192, 0.2);
+            background-color: rgba(0,123,192,0.12);
+            color: var(--accent-blue);
+            border: 1px solid rgba(0,123,192,0.2);
         }
 
         .data-card-body {
-            color: #4b5563;
+            color: var(--text-secondary);
             font-size: 0.95rem;
             line-height: 1.5;
         }
@@ -110,19 +121,19 @@
             justify-content: space-between;
             align-items: center;
             font-size: 0.85rem;
-            color: #6b7280;
+            color: var(--text-muted);
             margin-top: auto;
-            border-top: 1px solid rgba(0, 0, 0, 0.05);
+            border-top: 1px solid var(--border-subtle);
             padding-top: 1rem;
         }
 
         .finding-tag {
-            background: #f4f6f8;
+            background: var(--bg-card-hover);
             padding: 0.35rem 0.6rem;
             border-radius: 6px;
             font-size: 0.8rem;
-            border: 1px solid #e5e7eb;
-            color: #4b5563;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
             font-weight: 500;
         }
         
@@ -132,16 +143,11 @@
             gap: 8px;
             margin-top: 0.75rem;
         }
-        
-        .empty-state {
-            text-align: center;
-            padding: 4rem;
-            color: #6b7280;
-            font-size: 1.1rem;
-        }
     </style>
 </head>
 <body>
+
+    <canvas id="particles"></canvas>
 
     <div class="topbar">
         <div class="left-top">
@@ -150,14 +156,17 @@
             </button>
             <span class="brand">Privacy Portal</span>
         </div>
-        <div class="account">
-            <button class="account-btn">
-                <div class="avatar-small">EA</div>
-                <div class="account-info">
-                    <strong>Eyad Adly</strong>
-                    <span>Employee</span>
-                </div>
-            </button>
+        <div class="topbar-right" style="display: flex; align-items: center; gap: 14px;">
+            <button class="menu-btn theme-toggle" id="themeToggleBtn" onclick="window.toggleDarkMode()" title="Toggle Theme" type="button"></button>
+            <div class="account">
+                <button class="account-btn">
+                    <div class="avatar-small">EA</div>
+                    <div class="account-info">
+                        <strong>Eyad Adly</strong>
+                        <span>Employee</span>
+                    </div>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -201,16 +210,16 @@
     </div>
 
     <div class="main" style="padding: 40px;">
-        <header class="page-header">
+        <header class="page-header reveal">
             <div>
                 <a href="/employee-dashboard" class="back-link">
                     &larr; Back to Dashboard
                 </a>
-                <h1 id="page-title" style="margin-top: 1rem; color: #1f2937;">Loading Data Points...</h1>
+                <h1 id="page-title" style="margin-top: 1rem; background: var(--gradient-hero); background-size: 300% 300%; -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; animation: gradientShift 8s ease infinite;">Loading Data Points...</h1>
             </div>
         </header>
 
-        <section id="data-points-container" class="data-points-grid">
+        <section id="data-points-container" class="data-points-grid reveal">
             <!-- Data cards will be injected here -->
         </section>
     </div>
@@ -288,7 +297,7 @@
 
                     const findingsHtml = (file.findings && file.findings.length > 0) 
                         ? file.findings.map(f => `<span class="finding-tag">${f.category} (${f.risk_level})</span>`).join('')
-                        : '<span style="color: #6b7280; font-size: 0.9rem;">No sensitive data found</span>';
+                        : '<span style="color: var(--text-muted); font-size: 0.9rem;">No sensitive data found</span>';
 
                     const card = document.createElement('div');
                     card.className = 'glass-card data-card';
@@ -305,7 +314,7 @@
                         </div>
                         <div class="data-card-body">
                             <div>
-                                <strong style="color: #374151;">Detected Entities:</strong>
+                                <strong style="color: var(--text-primary);">Detected Entities:</strong>
                                 <div class="findings-container">${findingsHtml}</div>
                             </div>
                         </div>
@@ -320,7 +329,7 @@
             } catch (error) {
                 console.error("Error loading data points:", error);
                 container.innerHTML = `
-                    <div class="glass-card empty-state status-danger" style="background: rgba(255, 69, 58, 0.1);">
+                    <div class="glass-card empty-state" style="border: 1px solid rgba(234,0,22,0.2);">
                         Failed to load data points. Please try again later.
                     </div>
                 `;
@@ -331,6 +340,6 @@
 
 
     </script>
-    <script src="/static/js/dashboard.js"></script>
+    <script src="/static/js/dashboard.js?v=3"></script>
 </body>
 </html>

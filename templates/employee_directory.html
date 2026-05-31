@@ -5,204 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>File Explorer — Privacy Portal</title>
+<meta name="description" content="Search and explore files, review GDPR findings and flagged content across your organization.">
 
-<link rel="stylesheet" href="/static/css/dashboard.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-<style>
-/* Search-specific styles using existing design tokens */
+<link rel="stylesheet" href="/static/css/dashboard.css?v=3">
 
-.search-container {
-    padding: 35px;
-    margin-bottom: 30px;
-    animation: fadeUp .8s ease;
-}
-
-.search-container h2 {
-    font-size: 26px;
-    margin-bottom: 8px;
-}
-
-.search-container p {
-    color: #666;
-    margin-bottom: 24px;
-    line-height: 1.6;
-}
-
-.search-form {
-    display: flex;
-    gap: 14px;
-}
-
-.search-input {
-    flex: 1;
-    padding: 16px 22px;
-
-    border: 1px solid rgba(0,0,0,.08);
-    border-radius: 16px;
-
-    font-size: 15px;
-    font-family: "Segoe UI", sans-serif;
-
-    background: rgba(255,255,255,.45);
-    backdrop-filter: blur(12px);
-
-    color: #1f2937;
-
-    outline: none;
-    transition: all .3s ease;
-}
-
-.search-input::placeholder {
-    color: #999;
-}
-
-.search-input:focus {
-    border-color: #007bc0;
-    box-shadow: 0 0 0 3px rgba(0,123,192,.12);
-    background: rgba(255,255,255,.7);
-}
-
-/* Results area */
-
-.results-header {
-    margin: 30px 0 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    animation: fadeUp .9s ease;
-}
-
-.results-header h2 {
-    font-size: 22px;
-}
-
-.results-meta {
-    display: flex;
-    gap: 12px;
-}
-
-.risk-badge {
-    padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.risk-badge.high {
-    background: rgba(234,0,22,.1);
-    color: #ea0016;
-}
-
-.risk-badge.medium {
-    background: rgba(245,158,11,.1);
-    color: #f59e0b;
-}
-
-.risk-badge.low {
-    background: rgba(16,185,129,.1);
-    color: #10b981;
-}
-
-/* Result card extensions */
-
-.result-card {
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.result-card h3 {
-    font-size: 16px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.result-card .file-icon {
-    font-size: 20px;
-}
-
-.result-card .type-label {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: .5px;
-    color: #007bc0;
-    font-weight: 700;
-}
-
-.result-card .context-text {
-    font-size: 14px;
-    color: #555;
-    line-height: 1.6;
-    word-break: break-word;
-}
-
-/* Empty state */
-
-.empty-state {
-    text-align: center;
-    padding: 60px 20px;
-    animation: fadeUp .8s ease;
-}
-
-.empty-state .empty-icon {
-    font-size: 56px;
-    margin-bottom: 16px;
-    opacity: .5;
-}
-
-.empty-state h3 {
-    font-size: 20px;
-    margin-bottom: 8px;
-    color: #1f2937;
-}
-
-.empty-state p {
-    color: #888;
-    max-width: 400px;
-    margin: 0 auto;
-    line-height: 1.6;
-}
-
-/* Loading spinner */
-
-.loading-spinner {
-    text-align: center;
-    padding: 50px;
-}
-
-.loading-spinner::after {
-    content: "";
-    display: inline-block;
-    width: 36px;
-    height: 36px;
-    border: 3px solid rgba(0,123,192,.15);
-    border-top-color: #007bc0;
-    border-radius: 50%;
-    animation: spin .7s linear infinite;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-/* Error state */
-
-.error-state {
-    text-align: center;
-    padding: 40px 20px;
-}
-
-.error-state p {
-    color: #ea0016;
-    font-weight: 600;
-}
-</style>
-
+<script>
+    if (localStorage.getItem("pg-theme") === "light") {
+        document.documentElement.style.background = "#f3f4f8";
+    }
+</script>
 </head>
 
 <body>
+
+<canvas id="particles"></canvas>
 
 <div class="topbar">
 
@@ -218,7 +38,9 @@
 
     </div>
 
- <div class="account">
+    <div class="topbar-right" style="display: flex; align-items: center; gap: 14px;">
+        <button class="menu-btn theme-toggle" id="themeToggleBtn" onclick="window.toggleDarkMode()" title="Toggle Theme" type="button"></button>
+        <div class="account">
 
     <button class="account-btn" onclick="toggleAccountMenu()">
 
@@ -248,8 +70,8 @@
         </a>
 
     </div>
-
-</div>
+    </div>
+    </div>
 </div>
 
 <div class="sidebar" id="sidebar">
@@ -293,7 +115,7 @@
 
 <div class="main">
 
-    <section class="hero">
+    <section class="hero reveal">
 
         <h1>
             File Explorer
@@ -306,7 +128,7 @@
 
     </section>
 
-    <section class="glass-card search-container">
+    <section class="glass-card search-container reveal">
 
         <h2>Search Directory</h2>
 
@@ -340,8 +162,6 @@
 </div>
 
 <script>
-
-
 
 /* ---- Account Menu Toggle ---- */
 
@@ -386,7 +206,7 @@ async function handleSearch(e) {
         resultsArea.innerHTML = `
             <div class="glass-card error-state" style="grid-column: 1 / -1;">
                 <p>⚠️ Could not complete the search. Please try again.</p>
-                <p style="font-weight:400; color:#888; font-size:13px; margin-top:8px;">
+                <p style="font-weight:400; color: var(--text-muted); font-size:13px; margin-top:8px;">
                     ${err.message}
                 </p>
             </div>
@@ -495,7 +315,7 @@ function escapeHtml(text) {
 }
 
 </script>
-<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/dashboard.js?v=3"></script>
 
 </body>
 </html>

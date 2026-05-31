@@ -1,85 +1,190 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
-    <title>Privacy Guardian</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Guardian — Sign In</title>
+    <meta name="description" content="Sign in to Privacy Guardian — your GDPR compliance and data retention management platform.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <link rel="stylesheet" href="/static/css/login.css">
 </head>
 
 <body>
 
-<div class="background-glow"></div>
+    <canvas id="particles"></canvas>
 
-<div class="login-container">
+    <button class="theme-toggle-login" id="themeToggleLogin" title="Toggle Theme" type="button">
+        <span id="themeIcon">🌙</span>
+    </button>
 
-    <div class="left-panel">
+    <div class="login-container">
 
-        <div class="logo-bar"></div>
+        <div class="left-panel">
 
-        <h1>Privacy Guardian</h1>
+            <div class="logo-bar"></div>
 
-        <p>
-            Securely manage personal data,
-            retention policies,
-            and GDPR compliance.
-        </p>
+            <h1>Privacy Guardian</h1>
 
-    </div>
+            <p>
+                Securely manage personal data,
+                retention policies,
+                and GDPR compliance.
+            </p>
 
-    <div class="login-card">
-
-        <h2>Sign In</h2>
-
-        {% if error %}
-        <div style="background: rgba(226, 0, 26, 0.08); border: 1px solid #E2001A; color: #E2001A; padding: 14px; border-radius: 12px; margin-bottom: 24px; text-align: center; font-weight: 600; font-size: 14px;">
-            ⚠️ {{ error }}
         </div>
-        {% endif %}
 
-        <form action="/login" method="POST">
+        <div class="login-card">
 
-            <label>Account Type</label>
+            <h2>Sign In</h2>
 
-            <select name="role">
+            {% if error %}
+            <div
+                style="background: rgba(234,0,22,0.08); border: 1px solid rgba(234,0,22,0.3); color: #ff4d6a; padding: 14px; border-radius: 12px; margin-bottom: 24px; text-align: center; font-weight: 600; font-size: 14px;">
+                ⚠️ {{ error }}
+            </div>
+            {% endif %}
 
-                <option value="employee">
-                    Employee
-                </option>
+            <form action="/login" method="POST">
 
-                <option value="admin">
-                    Administrator
-                </option>
+                <label>Account Type</label>
 
-            </select>
+                <select name="role">
 
-            <label>Email / Employee ID</label>
+                    <option value="employee">
+                        Employee
+                    </option>
 
-            <input
-                type="text"
-                name="email"
-                placeholder="john.doe@company.com"
-                required
-            >
+                    <option value="admin">
+                        Administrator
+                    </option>
 
-            <label>Password</label>
+                </select>
 
-            <input
-                type="password"
-                name="password"
-                placeholder="••••••••"
-                required
-            >
+                <label>Email / Employee ID</label>
 
-            <button type="submit">
-                Login
-            </button>
+                <input type="text" name="email" placeholder="john.doe@company.com" required>
 
-        </form>
+                <label>Password</label>
+
+                <input type="password" name="password" placeholder="••••••••" required>
+
+                <button type="submit">
+                    Login
+                </button>
+
+            </form>
+
+        </div>
 
     </div>
 
-</div>
+    <script>
+    // Theme toggle for login page
+    (function() {
+        const saved = localStorage.getItem("pg-theme");
+        if (saved === "light") {
+            document.body.classList.add("light");
+        }
+
+        const btn = document.getElementById("themeToggleLogin");
+        const icon = document.getElementById("themeIcon");
+
+        function updateIcon() {
+            icon.textContent = document.body.classList.contains("light") ? "☀️" : "🌙";
+        }
+        updateIcon();
+
+        btn.addEventListener("click", function() {
+            document.body.classList.toggle("light");
+            const isLight = document.body.classList.contains("light");
+            localStorage.setItem("pg-theme", isLight ? "light" : "dark");
+            updateIcon();
+
+            // Update particle colors
+            if (window._particles) {
+                const col = isLight ? { r: 30, g: 30, b: 50 } : { r: 255, g: 255, b: 255 };
+                window._particles.forEach(p => { p.color = col; });
+            }
+        });
+    })();
+
+    // Particle canvas for login
+    (function() {
+        const canvas = document.getElementById('particles');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        let width, height;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        const COUNT = Math.min(60, Math.floor(window.innerWidth / 22));
+        const CONN = 140;
+        const SPEED = 0.25;
+        const isLight = document.body.classList.contains('light');
+        const baseColor = isLight ? { r: 30, g: 30, b: 50 } : { r: 255, g: 255, b: 255 };
+
+        const particles = [];
+        window._particles = particles;
+
+        for (let i = 0; i < COUNT; i++) {
+            particles.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                vx: (Math.random() - 0.5) * SPEED,
+                vy: (Math.random() - 0.5) * SPEED,
+                radius: Math.random() * 1.5 + 0.5,
+                opacity: Math.random() * 0.25 + 0.08,
+                color: { ...baseColor }
+            });
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            for (let i = 0; i < particles.length; i++) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                if (p.x < 0 || p.x > width) p.vx *= -1;
+                if (p.y < 0 || p.y > height) p.vy *= -1;
+                p.x = Math.max(0, Math.min(width, p.x));
+                p.y = Math.max(0, Math.min(height, p.y));
+
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${p.color.r},${p.color.g},${p.color.b},${p.opacity})`;
+                ctx.fill();
+
+                for (let j = i + 1; j < particles.length; j++) {
+                    const p2 = particles[j];
+                    const dx = p.x - p2.x;
+                    const dy = p.y - p2.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < CONN) {
+                        const alpha = (1 - dist / CONN) * 0.06;
+                        ctx.beginPath();
+                        ctx.moveTo(p.x, p.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.strokeStyle = `rgba(${p.color.r},${p.color.g},${p.color.b},${alpha})`;
+                        ctx.lineWidth = 0.5;
+                        ctx.stroke();
+                    }
+                }
+            }
+            requestAnimationFrame(animate);
+        }
+        animate();
+    })();
+    </script>
 
 </body>
 

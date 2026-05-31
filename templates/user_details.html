@@ -5,8 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>User GDPR Profile — Privacy Portal</title>
+<meta name="description" content="Complete GDPR data profile with retention countdown and flagged PII findings.">
 
-<link rel="stylesheet" href="/static/css/dashboard.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="/static/css/dashboard.css?v=3">
+
+<script>
+    if (localStorage.getItem("pg-theme") === "light") {
+        document.documentElement.style.background = "#f3f4f8";
+    }
+</script>
 
 <style>
 /* User Details specific styles */
@@ -27,7 +38,7 @@
 
 .data-card h3 {
     font-size: 18px;
-    color: #1f2937;
+    color: var(--text-primary);
     margin-bottom: 5px;
     display: flex;
     align-items: center;
@@ -39,19 +50,19 @@
 }
 
 .data-snippet {
-    background: rgba(0,0,0,0.03);
+    background: var(--bg-card-hover);
     padding: 12px;
     border-radius: 8px;
-    border-left: 3px solid #007bc0;
-    font-family: monospace;
+    border-left: 3px solid var(--accent-blue);
+    font-family: 'Space Grotesk', monospace;
     font-size: 13px;
-    color: #333;
+    color: var(--text-secondary);
     word-break: break-all;
 }
 
 .data-reasoning {
     font-size: 14px;
-    color: #555;
+    color: var(--text-secondary);
     line-height: 1.5;
 }
 
@@ -75,11 +86,11 @@
 .gdpr-countdown-section h2 {
     font-size: 28px;
     margin-bottom: 10px;
-    color: #1f2937;
+    color: var(--text-primary);
 }
 
 .gdpr-countdown-section p {
-    color: #666;
+    color: var(--text-secondary);
     margin-bottom: 30px;
     font-size: 16px;
 }
@@ -101,38 +112,39 @@
 .time-value {
     font-size: 48px;
     font-weight: 700;
-    color: #007bc0;
+    font-family: 'Space Grotesk', sans-serif;
+    color: var(--accent-blue);
     line-height: 1;
     margin-bottom: 8px;
 }
 
 .time-label {
-    font-size: 14px;
-    color: #777;
+    font-size: 12px;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 1px;
     font-weight: 600;
 }
 
 .expired-state .gdpr-countdown-section {
-    border-color: #ea0016;
-    animation: boschFlow 6s linear infinite;
-    background: linear-gradient(90deg, rgba(234,0,22,0.05), rgba(255,255,255,0.8), rgba(234,0,22,0.05));
-    background-size: 300% 100%;
+    border-color: var(--accent-red);
+    background: rgba(234,0,22,0.04);
 }
 
 .expired-state .time-value {
-    color: #ea0016;
+    color: var(--accent-red);
 }
 
 .expired-message {
     display: none;
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 700;
-    color: #ea0016;
+    font-family: 'Space Grotesk', sans-serif;
+    color: #ff4d6a;
     margin-top: 20px;
     padding: 15px;
-    background: rgba(234,0,22,0.1);
+    background: rgba(234,0,22,0.08);
+    border: 1px solid rgba(234,0,22,0.15);
     border-radius: 12px;
 }
 
@@ -145,23 +157,18 @@
 }
 
 /* Loading/Empty states */
-.loading-state, .empty-state {
+.loading-state {
     text-align: center;
     padding: 50px;
-    color: #666;
+    color: var(--text-muted);
 }
-
-.empty-state h3 {
-    font-size: 20px;
-    color: #333;
-    margin-bottom: 10px;
-}
-
 </style>
 
 </head>
 
 <body>
+
+<canvas id="particles"></canvas>
 
 <div class="topbar">
     <div class="left-top">
@@ -169,7 +176,9 @@
         <span class="brand">Privacy Portal</span>
     </div>
 
-    <div class="account">
+    <div class="topbar-right" style="display: flex; align-items: center; gap: 14px;">
+        <button class="menu-btn theme-toggle" id="themeToggleBtn" onclick="window.toggleDarkMode()" title="Toggle Theme" type="button"></button>
+        <div class="account">
         <button class="account-btn" onclick="toggleAccountMenu()">
             <div class="avatar-small">EA</div>
             <div class="account-info">
@@ -184,6 +193,7 @@
             <a href="/">Logout</a>
         </div>
     </div>
+</div>
 </div>
 
 <div class="sidebar" id="sidebar">
@@ -227,14 +237,14 @@
 
 <div class="main">
 
-    <section class="hero">
+    <section class="hero reveal">
         <h1>User GDPR Profile</h1>
         <p>Complete GDPR Data Profile for <strong id="hero-user-id">{{ employee_id }}</strong></p>
     </section>
 
-    <div id="content-area">
+    <div id="content-area" class="reveal">
         <div class="loading-state">
-            <div style="font-size: 40px; animation: spin 1s linear infinite; display: inline-block;">⚙️</div>
+            <div class="loading-spinner"></div>
             <p style="margin-top: 15px;">Loading user profile...</p>
         </div>
     </div>
@@ -266,7 +276,7 @@ async function loadUserProfile() {
         contentArea.innerHTML = `
             <div class="glass-card error-state">
                 <p>⚠️ Error loading user data</p>
-                <p style="font-weight:400; color:#888; font-size:13px; margin-top:8px;">${err.message}</p>
+                <p style="font-weight:400; color: var(--text-muted); font-size:13px; margin-top:8px;">${err.message}</p>
             </div>
         `;
     }
@@ -284,7 +294,7 @@ function getCategoryIcon(category) {
 function getStatusClass(status) {
     status = (status || "").toLowerCase();
     if (status === "pending") return "warning";
-    if (status === "deleted") return "low"; // 'low' class gives green color in our css
+    if (status === "deleted") return "low";
     return "danger";
 }
 
@@ -309,18 +319,20 @@ function renderProfile(data) {
 
     data.files.forEach(file => {
         const hasFindings = file.findings && file.findings.length > 0;
-        const cardStyle = hasFindings ? "border: 2px solid #ea0016; background: rgba(234,0,22,0.02);" : "";
-        const badgeHtml = hasFindings ? `<span class="danger" style="font-size: 12px; margin-left:auto; padding:4px 10px; border-radius:12px; background: rgba(234,0,22,0.1);">GDPR VIOLATION</span>` : `<span style="font-size: 12px; margin-left:auto; padding:4px 10px; border-radius:12px; background: rgba(16,185,129,0.1); color: #10b981; font-weight:600;">CLEAN</span>`;
+        const cardStyle = hasFindings ? "border: 1px solid rgba(234,0,22,0.25);" : "";
+        const badgeHtml = hasFindings 
+            ? `<span style="font-size: 11px; margin-left:auto; padding:4px 12px; border-radius:12px; background: rgba(234,0,22,0.12); color: #ff4d6a; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">GDPR VIOLATION</span>` 
+            : `<span style="font-size: 11px; margin-left:auto; padding:4px 12px; border-radius:12px; background: rgba(16,185,129,0.12); color: #10b981; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">CLEAN</span>`;
         
         html += `
             <div class="glass-card data-card" style="${cardStyle}">
-                <div style="display: flex; align-items: center; border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 10px; margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px; margin-bottom: 10px;">
                     <h3 style="margin: 0; font-size: 16px;">
                         <span class="category-icon">📄</span> ${escapeHtml(file.file_name)}
                     </h3>
                     ${badgeHtml}
                 </div>
-                <div style="font-size: 12px; color: #777;">
+                <div style="font-size: 12px; color: var(--text-muted);">
                     <strong>Path:</strong> ${escapeHtml(file.file_path)}<br>
                     <strong>Size:</strong> ${(file.size_bytes / 1024).toFixed(1)} KB<br>
                     <strong>Modified:</strong> ${file.last_modified ? new Date(file.last_modified).toLocaleDateString() : 'Unknown'}
@@ -329,13 +341,13 @@ function renderProfile(data) {
 
         if (hasFindings) {
             html += `<div style="margin-top: 15px; border-top: 1px solid rgba(234,0,22,0.1); padding-top: 10px;">
-                        <strong style="color: #ea0016; font-size: 13px; display:block; margin-bottom:8px;">Flagged PII Data:</strong>`;
+                        <strong style="color: #ff4d6a; font-size: 13px; display:block; margin-bottom:8px;">Flagged PII Data:</strong>`;
             
             file.findings.forEach(finding => {
                 const icon = getCategoryIcon(finding.category);
                 html += `
-                    <div style="background: rgba(255,255,255,0.6); padding: 10px; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid #ea0016;">
-                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">${icon} ${finding.category || "Uncategorized"}</div>
+                    <div style="background: var(--bg-card-hover); padding: 10px; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid var(--accent-red);">
+                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px; color: var(--text-primary);">${icon} ${finding.category || "Uncategorized"}</div>
                         <div class="data-snippet" style="border-left: none; padding: 8px; font-size: 12px; margin-bottom: 6px;">${finding.flagged_snippet || "N/A"}</div>
                         <div class="data-reasoning" style="font-size: 12px;">${finding.reasoning || "No reasoning provided."}</div>
                     </div>
@@ -386,7 +398,7 @@ function renderProfile(data) {
     if (data.retention_deadline) {
         startCountdown(new Date(data.retention_deadline));
     } else {
-        document.getElementById("countdown-timer").innerHTML = `<div style="font-size: 20px; font-weight: 600; color: #555;">No deadline set for this data.</div>`;
+        document.getElementById("countdown-timer").innerHTML = `<div style="font-size: 20px; font-weight: 600; color: var(--text-muted);">No deadline set for this data.</div>`;
     }
 }
 
@@ -411,7 +423,7 @@ function escapeHtml(text) {
 loadUserProfile();
 
 </script>
-<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/dashboard.js?v=3"></script>
 
 </body>
 </html>
