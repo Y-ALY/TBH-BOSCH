@@ -1,16 +1,50 @@
+"""
+Database layer — SQLAlchemy ORM models, engine/session setup, and reusable
+dependencies for the TBH-BOSCH GDPR scanner.
+
+Currently SQLite-backed.  The engine reads DATABASE_URL from the environment
+so switching to PostgreSQL (or any SQLAlchemy-supported backend) requires
+only a config change — no code edits.
+
+SQLite Limitations (for operators coming from PostgreSQL):
+  - Single-writer: only ONE writer at a time.  Concurrent writes from
+    multiple workers / threads will hit SQLITE_BUSY and may be queued or
+    dropped.  WAL mode (PRAGMA journal_mode=WAL) allows concurrent readers
+    during a write but does NOT allow multiple simultaneous writers.
+  - No ALTER TABLE: column/constraint changes that are a one-liner in
+    PostgreSQL require a full table rebuild in SQLite (create-new-table,
+    copy-data, drop-old, rename-new).  Alembic batch mode can paper over
+    this during development, but production schema changes are fragile.
+  - No row-level locking, no replication, no point-in-time recovery.
+  - Connection pooling: the ``check_same_thread=False`` workaround used
+    here is NOT safe for multi-process deployments (gunicorn workers,
+    uvicorn with ``--workers > 1``).  Each process must open its own
+    file-level connection.
+  - File-based persistence: the .db file lives on the local filesystem.
+    It is lost if the container/pod restarts without a persistent volume.
+
+  Recommendation: migrate to PostgreSQL + Alembic before deploying to any
+  shared or production environment (see Agent 9 / Phase 2).
+"""
+
 import os
 from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime, timedelta
 
-# ── Database URL: production reads DATABASE_URL, local dev falls back to SQLite ──
-# Render sets DATABASE_URL automatically when a PostgreSQL database is attached.
-# The SQLite fallback is for local demo/hackathon use only.
+
+# =============================================================================
+# Section 1 — Engine / Session Setup
+# =============================================================================
+# Environment-driven: set DATABASE_URL to point at PostgreSQL, SQLite is the
+# local-dev / demo fallback.  Render sets DATABASE_URL automatically when a
+# PostgreSQL addon is attached.
+
 SQLALCHEMY_DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./bosch_gdpr.db")
 
-# PostgreSQL on Render uses connection pooling; SQLite needs check_same_thread=False
 _is_sqlite = SQLALCHEMY_DATABASE_URL.startswith("sqlite")
 _connect_args = {"check_same_thread": False} if _is_sqlite else {}
+
 # Render free-tier PostgreSQL has a low connection limit (~5). NullPool avoids
 # holding idle connections that would exhaust the limit.
 _poolclass = None
@@ -26,7 +60,18 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# Add this class to database.py
+# =============================================================================
+# Section 2 — ORM Models
+# =============================================================================
+# Each class maps to a SQLite (or PostgreSQL) table via SQLAlchemy's
+# declarative base.  Tables are auto-created at import time by the
+# ``Base.metadata.create_all(bind=engine)`` call at the bottom of this file.
+#
+# Naming note: ``FileMetadata`` here is a SQLAlchemy ORM class.  The
+# scan-engine dataclass in ``src/models.py`` is also called ``FileMetadata``.
+# Importers typically alias one to avoid confusion, e.g.
+#     from database import FileMetadata as FileMetadataORM
+
 class Employee(Base):
     __tablename__ = "employees"
     
@@ -132,7 +177,13 @@ class Notification(Base):
     actioned_at = Column(DateTime, nullable=True)
 
 
-# ── Reusable DB session dependency ────────────────────────────────────────────
+# =============================================================================
+# Section 3 — Repository / Helper Functions
+# =============================================================================
+# Currently a single FastAPI dependency.  As the codebase grows, repository
+# classes for Finding, FileMetadata, ScanJob, etc. should live here or in a
+# dedicated ``data_access/repositories.py``.
+
 def get_db():
     """Yield a SQLAlchemy session; auto-closes when the request ends."""
     db = SessionLocal()
@@ -142,5 +193,8 @@ def get_db():
         db.close()
 
 
-# Create the tables in the database
+# ── Auto-create tables at import time (dev convenience) ─────────────────
+# In production with PostgreSQL this should be replaced by Alembic migrations.
+# ``create_all`` is safe for SQLite (creates only if not exists) but does NOT
+# handle schema migrations (no ALTER TABLE — see module-level docstring).
 Base.metadata.create_all(bind=engine)

@@ -2,6 +2,40 @@
 
 Used by the streaming scanner and background scan jobs to avoid per-finding
 individual INSERT/UPDATE calls to SQLite.
+
+Upsert behaviour
+----------------
+Findings are upserted by **finding_uid** (the ``finding_id`` field on the
+dataclass maps to ``FindingORM.finding_uid`` in the database).  On flush:
+
+1. All pending finding_uids are collected from the in-memory buffer.
+2. A single ``SELECT … WHERE finding_uid IN (…)`` query fetches any rows
+   that already exist in the DB for those UIDs.
+3. Existing rows are updated **in-place** on the ORM object (``_apply_finding_to_orm``).
+4. New rows are inserted via ``bulk_insert_mappings``.
+5. The flush counter counts both updates and inserts as "rows written".
+
+File metadata is handled differently — it is NOT batched through the buffer
+for existing files.  ``add_file_state()`` queries the DB immediately for the
+file path.  If found the row is updated and flushed right away; only *new*
+files are written through the bulk buffer.
+
+Edge case (file metadata in same batch)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Two ``add_file_state()`` calls for the **same new path** within one batch
+will both be appended to ``_file_states`` and both inserted via
+``bulk_insert_mappings``, causing a UNIQUE-constraint violation on
+``file_path``.  Callers should deduplicate by path before feeding files to
+the BulkWriter.  (Findings do not have this problem because the per-flush
+SELECT-IN check catches duplicates within the batch.)
+
+Hardcoded defaults (demo-only)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+- ``owner_employee_id = "BX-17335"`` — a hardcoded demo employee ID.
+  Production must resolve the real data owner per file (e.g. from
+  ``owner_hints.json``, directory metadata, or a connector-provided field).
+- ``retention_deadline = now + 200 days`` — an arbitrary demo deadline.
+  Production must use a real retention schedule.
 """
 
 from __future__ import annotations
@@ -74,10 +108,16 @@ class BulkWriter:
 
         row = {
             "file_path": file_ref.path_or_uri,
+            # DEMO-ONLY: hardcoded employee ID.  Production must resolve
+            # the real owner from owner_hints, directory metadata, or a
+            # connector-provided owner field.
             "owner_employee_id": "BX-17335",
             "size_bytes": file_ref.size_bytes,
             "file_hash": content_hash,
             "last_modified": self._parse_datetime(file_ref.last_modified),
+            # DEMO-ONLY: arbitrary 200-day retention from "now".
+            # Production must use a real retention schedule per document
+            # type / legal basis.
             "retention_deadline": datetime.now() + timedelta(days=200),
         }
         self._file_states.append(row)

@@ -643,3 +643,391 @@ def test_bulkwriter_pending_count_property():
 
     db.commit()
     db.close()
+
+
+# =============================================================================
+# Tests using conftest.py fixtures (engine, db_session)
+# =============================================================================
+# These tests reuse the session-scoped in-memory SQLite engine and
+# function-scoped SAVEPOINT-isolated sessions from tests/conftest.py.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Review state persistence (direct ORM, no BulkWriter)
+# ---------------------------------------------------------------------------
+
+def test_review_state_persist_new_finding(db_session):
+    """Review fields (review_action, review_status, reviewer, reviewed_at)
+    should persist on a newly inserted Finding row."""
+    f = FindingORM(
+        finding_uid="test-review-new",
+        file_id_str="local:review_test.pdf",
+        type="email",
+        value="review-me@example.com",
+        risk_level="high",
+        review_status="pending_review",
+        review_action=None,
+        reviewer=None,
+        reviewed_at=None,
+    )
+    db_session.add(f)
+    db_session.commit()
+
+    row = db_session.query(FindingORM).filter(
+        FindingORM.finding_uid == "test-review-new"
+    ).first()
+    assert row is not None
+    assert row.review_status == "pending_review"
+    assert row.review_action is None
+    assert row.reviewer is None
+    assert row.reviewed_at is None
+
+
+def test_review_state_update_existing(db_session):
+    """Updating review fields on an existing finding should persist changes."""
+    # Insert initial finding
+    f = FindingORM(
+        finding_uid="test-review-update",
+        file_id_str="local:review_test.pdf",
+        type="email",
+        value="update-me@example.com",
+        review_status="pending_review",
+        review_action=None,
+        reviewer=None,
+        reviewed_at=None,
+    )
+    db_session.add(f)
+    db_session.commit()
+
+    # Simulate a human review action
+    row = db_session.query(FindingORM).filter(
+        FindingORM.finding_uid == "test-review-update"
+    ).first()
+    row.review_status = "retained"
+    row.review_action = "retain"
+    row.reviewer = "BX-ADMIN"
+    row.reviewed_at = "2026-06-01T12:00:00"
+    db_session.commit()
+
+    # Re-read and verify
+    row2 = db_session.query(FindingORM).filter(
+        FindingORM.finding_uid == "test-review-update"
+    ).first()
+    assert row2.review_status == "retained"
+    assert row2.review_action == "retain"
+    assert row2.reviewer == "BX-ADMIN"
+    assert row2.reviewed_at == "2026-06-01T12:00:00"
+
+
+def test_review_state_full_lifecycle(db_session):
+    """Review state should transition through pending -> retained -> deleted."""
+    f = FindingORM(
+        finding_uid="test-review-lifecycle",
+        file_id_str="local:lifecycle.pdf",
+        type="tax_id",
+        value="DE999999999",
+        review_status="pending_review",
+    )
+    db_session.add(f)
+    db_session.commit()
+
+    # pending_review
+    row = db_session.query(FindingORM).filter(
+        FindingORM.finding_uid == "test-review-lifecycle"
+    ).first()
+    assert row.review_status == "pending_review"
+
+    # retained
+    row.review_status = "retained"
+    row.review_action = "retain"
+    row.reviewer = "reviewer-1"
+    row.reviewed_at = "2026-06-01T10:00:00"
+    db_session.commit()
+
+    row2 = db_session.query(FindingORM).filter(
+        FindingORM.finding_uid == "test-review-lifecycle"
+    ).first()
+    assert row2.review_status == "retained"
+    assert row2.reviewer == "reviewer-1"
+
+    # deleted
+    row2.review_status = "deleted"
+    row2.review_action = "delete"
+    row2.reviewer = "reviewer-2"
+    row2.reviewed_at = "2026-06-01T11:00:00"
+    db_session.commit()
+
+    row3 = db_session.query(FindingORM).filter(
+        FindingORM.finding_uid == "test-review-lifecycle"
+    ).first()
+    assert row3.review_status == "deleted"
+    assert row3.review_action == "delete"
+    assert row3.reviewer == "reviewer-2"
+
+
+def test_review_state_defaults(db_session):
+    """New findings should default to review_status='pending_review' and
+    review_action/reviewer/reviewed_at as NULL/None."""
+    f = FindingORM(
+        finding_uid="test-review-defaults",
+        file_id_str="local:defaults.pdf",
+        type="name",
+        value="Default User",
+    )
+    db_session.add(f)
+    db_session.commit()
+
+    row = db_session.query(FindingORM).filter(
+        FindingORM.finding_uid == "test-review-defaults"
+    ).first()
+    assert row.review_status == "pending_review"
+    assert row.review_action is None
+    assert row.reviewer is None
+    assert row.reviewed_at is None
+
+
+# ---------------------------------------------------------------------------
+# Finding insert / update via BulkWriter (conftest fixtures)
+# ---------------------------------------------------------------------------
+
+def test_bulkwriter_finding_insert_conftest(db_session):
+    """BulkWriter.add_finding + flush should insert new findings."""
+    writer = BulkWriter(db_session, batch_size=50)
+
+    for i in range(10):
+        f_obj = Finding(
+            finding_id=f"conftest-insert-{i}",
+            file_id="local:conftest.pdf",
+            type="email",
+            value=f"conftest{i}@example.com",
+            risk_level="medium",
+        )
+        writer.add_finding(f_obj)
+
+    rows = writer.flush()
+    db_session.commit()
+
+    assert rows == 10
+    assert writer.pending_count == 0
+
+    for i in range(10):
+        row = db_session.query(FindingORM).filter(
+            FindingORM.finding_uid == f"conftest-insert-{i}"
+        ).first()
+        assert row is not None, f"conftest-insert-{i} not found"
+        assert row.value == f"conftest{i}@example.com"
+
+
+def test_bulkwriter_finding_upsert_conftest(db_session):
+    """Adding a finding with an existing finding_uid should UPDATE, not duplicate."""
+    writer = BulkWriter(db_session, batch_size=50)
+
+    # Insert
+    f1 = Finding(
+        finding_id="conftest-upsert",
+        file_id="local:conftest.pdf",
+        type="email",
+        value="first@example.com",
+        risk_level="low",
+    )
+    writer.add_finding(f1)
+    writer.flush()
+    db_session.commit()
+
+    # Verify first insert
+    row = db_session.query(FindingORM).filter(
+        FindingORM.finding_uid == "conftest-upsert"
+    ).first()
+    assert row is not None
+    assert row.value == "first@example.com"
+    assert row.risk_level == "low"
+
+    # Upsert with same finding_uid
+    f2 = Finding(
+        finding_id="conftest-upsert",
+        file_id="local:conftest.pdf",
+        type="email",
+        value="second@example.com",
+        risk_level="high",
+    )
+    writer.add_finding(f2)
+    writer.flush()
+    db_session.commit()
+
+    # Should be exactly one row, with updated values
+    all_rows = db_session.query(FindingORM).filter(
+        FindingORM.finding_uid == "conftest-upsert"
+    ).all()
+    assert len(all_rows) == 1
+    assert all_rows[0].value == "second@example.com"
+    assert all_rows[0].risk_level == "high"
+
+
+# ---------------------------------------------------------------------------
+# File metadata insert / update via BulkWriter (conftest fixtures)
+# ---------------------------------------------------------------------------
+
+def test_bulkwriter_file_metadata_insert_conftest(db_session):
+    """add_file_state should insert a new FileMetadata row when the path is new."""
+    writer = BulkWriter(db_session, batch_size=50)
+
+    fr = FileRef(
+        file_id="local:conftest_file.pdf",
+        file_name="conftest_file.pdf",
+        path_or_uri="/tmp/conftest_file.pdf",
+        source_type="local",
+        size_bytes=4096,
+        last_modified="2025-01-15T08:30:00",
+        etag_or_version="etag-abc",
+    )
+    writer.add_file_state(fr, content_hash="sha256-fff")
+    writer.flush()
+    db_session.commit()
+
+    from database import FileMetadata as FileMetadataORM
+    row = db_session.query(FileMetadataORM).filter(
+        FileMetadataORM.file_path == "/tmp/conftest_file.pdf"
+    ).first()
+    assert row is not None
+    assert row.file_hash == "sha256-fff"
+    assert row.size_bytes == 4096
+    # DEMO-ONLY default owner
+    assert row.owner_employee_id == "BX-17335"
+
+
+def test_bulkwriter_file_metadata_update_conftest(db_session):
+    """Adding the same file path again should UPDATE the existing row, not duplicate."""
+    writer = BulkWriter(db_session, batch_size=50)
+
+    fr1 = FileRef(
+        file_id="local:conftest_update.pdf",
+        file_name="conftest_update.pdf",
+        path_or_uri="/tmp/conftest_update.pdf",
+        source_type="local",
+        size_bytes=1000,
+        last_modified="2025-01-01T00:00:00",
+        etag_or_version="v1",
+    )
+    writer.add_file_state(fr1, content_hash="hash-aaa")
+    writer.flush()
+    db_session.commit()
+
+    # Update same path with new values
+    fr2 = FileRef(
+        file_id="local:conftest_update.pdf",
+        file_name="conftest_update.pdf",
+        path_or_uri="/tmp/conftest_update.pdf",
+        source_type="local",
+        size_bytes=2000,
+        last_modified="2025-06-01T12:00:00",
+        etag_or_version="v2",
+    )
+    writer.add_file_state(fr2, content_hash="hash-bbb")
+    writer.flush()
+    db_session.commit()
+
+    from database import FileMetadata as FileMetadataORM
+    rows = db_session.query(FileMetadataORM).filter(
+        FileMetadataORM.file_path == "/tmp/conftest_update.pdf"
+    ).all()
+    assert len(rows) == 1, f"Expected 1 row, got {len(rows)} (should update, not duplicate)"
+    assert rows[0].size_bytes == 2000
+    assert rows[0].file_hash == "hash-bbb"
+
+
+# ---------------------------------------------------------------------------
+# BulkWriter flush semantics (conftest fixtures)
+# ---------------------------------------------------------------------------
+
+def test_bulkwriter_flush_clears_buffers_conftest(db_session):
+    """After flush, pending_count returns to 0 and new items start fresh."""
+    writer = BulkWriter(db_session, batch_size=100)
+
+    for i in range(15):
+        f = Finding(
+            finding_id=f"conftest-flush-buf-{i}",
+            file_id="local:conftest.pdf",
+            type="email",
+            value=f"buf{i}@example.com",
+        )
+        writer.add_finding(f)
+
+    assert writer.pending_count == 15
+    writer.flush()
+    db_session.commit()
+
+    assert writer.pending_count == 0
+
+    # Second batch
+    for i in range(5):
+        f = Finding(
+            finding_id=f"conftest-flush-buf2-{i}",
+            file_id="local:conftest.pdf",
+            type="email",
+            value=f"buf2-{i}@example.com",
+        )
+        writer.add_finding(f)
+
+    assert writer.pending_count == 5
+    writer.flush()
+    db_session.commit()
+    assert writer.pending_count == 0
+
+
+def test_bulkwriter_autoflush_on_batch_full_conftest(db_session):
+    """When pending_count reaches batch_size, an auto-flush should be triggered."""
+    writer = BulkWriter(db_session, batch_size=10)
+
+    for i in range(10):
+        f = Finding(
+            finding_id=f"conftest-autoflush-{i}",
+            file_id="local:conftest.pdf",
+            type="email",
+            value=f"auto{i}@example.com",
+        )
+        writer.add_finding(f)
+
+    assert writer.pending_count == 10
+    assert writer.flush_count == 0, "Should not flush when exactly at batch_size"
+
+    # The 11th item triggers auto-flush
+    f = Finding(
+        finding_id="conftest-autoflush-10",
+        file_id="local:conftest.pdf",
+        type="email",
+        value="auto10@example.com",
+    )
+    writer.add_finding(f)
+
+    assert writer.flush_count >= 1, f"Expected auto-flush, got flush_count={writer.flush_count}"
+
+    writer.flush()
+    db_session.commit()
+
+
+def test_bulkwriter_tracks_metrics_conftest(db_session):
+    """flush_count, total_rows_written, and total_write_time_ms should be tracked."""
+    writer = BulkWriter(db_session, batch_size=20)
+
+    assert writer.flush_count == 0
+    assert writer.total_rows_written == 0
+    assert writer.total_write_time_ms == 0.0
+
+    for i in range(25):
+        f = Finding(
+            finding_id=f"conftest-metrics-{i}",
+            file_id="local:conftest.pdf",
+            type="email",
+            value=f"metrics{i}@example.com",
+        )
+        writer.add_finding(f)
+
+    # 25 items with batch_size=20: auto-flush at item 21, 4 remain
+    assert writer.flush_count == 1
+    assert writer.total_rows_written == 20
+
+    writer.flush()
+    db_session.commit()
+
+    assert writer.total_rows_written == 25
+    assert writer.total_write_time_ms > 0.0
