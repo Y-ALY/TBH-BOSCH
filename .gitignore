@@ -10,3 +10,16 @@ __pycache__/
 # Environment Variables (CRITICAL for your €100 API key later)
 .env
 .DS_Store
+
+# Logs
+*.log
+
+# Generated output artifacts
+*_results.json
+*_output.json
+
+# Temp diff files
+diff.txt
+
+# pytest cache
+.pytest_cache/
