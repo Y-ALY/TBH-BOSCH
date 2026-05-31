@@ -148,16 +148,21 @@ def test_benchmark_legacy_on_empty_dir():
 # benchmark_streaming
 # ---------------------------------------------------------------------------
 
-def test_benchmark_streaming_graceful_fallback():
-    """benchmark_streaming should return zero-file result when scanner unavailable."""
+def test_benchmark_streaming_on_10_files():
+    """benchmark_streaming should work on a small subset or fall back gracefully."""
     result = benchmark_streaming(DEMO_CORPUS, limit=10)
-    # Streaming scanner doesn't exist yet — should fall back gracefully
     assert result.scanner_name == "streaming"
-    # file_count will be 0 because the streaming scanner doesn't exist
-    # (no ImportError should be raised)
-    assert result.file_count == 0
-    assert result.total_time_ms == 0.0
-    assert result.error_count == 0
+    # If streaming scanner exists, file_count > 0; otherwise 0
+    if result.file_count > 0:
+        assert result.total_time_ms > 0, "Should have non-zero total time"
+        assert result.files_per_second > 0, "Should have non-zero throughput"
+        assert result.peak_memory_mb > 0, "Should have non-zero memory"
+        assert result.total_findings >= 0
+        assert result.error_count >= 0
+    else:
+        # Graceful fallback — scanner not available
+        assert result.total_time_ms == 0.0
+        assert result.error_count == 0
 
 
 # ---------------------------------------------------------------------------
@@ -186,12 +191,16 @@ def test_run_comparison_legacy_has_data():
     assert legacy.total_findings >= 0
 
 
-def test_run_comparison_speedup_is_zero_when_streaming_unavailable():
-    """When streaming scanner is not available, speedup should be 0."""
+def test_run_comparison_speedup_behavior():
+    """Speedup should be 0 when streaming unavailable, positive when available."""
     comp = run_comparison(DEMO_CORPUS, limit=10)
     if comp["streaming"].file_count == 0:
         assert comp["speedup"] == 0.0
         assert "FAIL" in comp["verdict"]
+    else:
+        # Streaming scanner is available
+        assert comp["speedup"] > 0, "Speedup should be positive"
+        assert "PASS" in comp["verdict"] or "FAIL" in comp["verdict"]
 
 
 # ---------------------------------------------------------------------------

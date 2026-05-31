@@ -38,7 +38,8 @@ _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
 
 def _init_db():
-    """Create all tables in the in-memory DB."""
+    """Drop and recreate all tables in the in-memory DB."""
+    Base.metadata.drop_all(bind=_engine)
     Base.metadata.create_all(bind=_engine)
 
 
@@ -556,11 +557,14 @@ def test_bulkwriter_tracks_write_time():
             )
             writer.add_finding(f)
 
-    assert writer.flush_count == 3  # Auto-flushed 3 times
-    assert writer.total_rows_written == 150
+    assert writer.flush_count == 2  # Auto-flushed at items 51 and 101 (50 remain buffered)
+    assert writer.total_rows_written == 100  # 2 * 50 flushed so far
     assert writer.total_write_time_ms > 0.0
 
+    # Flush remaining
+    writer.flush()
     db.commit()
+    assert writer.total_rows_written == 150
     db.close()
 
 

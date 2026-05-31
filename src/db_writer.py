@@ -68,6 +68,10 @@ class BulkWriter:
             self._db.flush()
             return
 
+        # Flush first if buffer is at capacity — the new item stays buffered
+        if self._total_queued >= self._batch_size:
+            self.flush()
+
         row = {
             "file_path": file_ref.path_or_uri,
             "owner_employee_id": "BX-17335",
@@ -78,19 +82,17 @@ class BulkWriter:
         }
         self._file_states.append(row)
 
-        if self._total_queued > self._batch_size:
-            self.flush()
-
     def add_finding(self, finding: Finding) -> None:
         """Queue a finding for bulk insert/upsert.
 
         If a finding with the same ``finding_uid`` already exists in the DB,
         it will be updated instead of inserted on flush.
         """
-        self._findings.append(finding)
-
-        if self._total_queued > self._batch_size:
+        # Flush first if buffer is at capacity — the new finding stays buffered
+        if self._total_queued >= self._batch_size:
             self.flush()
+
+        self._findings.append(finding)
 
     def flush(self) -> int:
         """Write all queued records to the database.
@@ -238,7 +240,7 @@ class BulkWriter:
         orm_row.assigned_owner = f.assigned_owner
         orm_row.owner_email = f.owner_email
         orm_row.owner_department = f.owner_department
-        orm_row.owner_reserved = f.owner_resolved
+        orm_row.owner_resolved = f.owner_resolved
         orm_row.escalation_target = f.escalation_target
         orm_row.category = f.type
         orm_row.confidence_score = f.confidence
