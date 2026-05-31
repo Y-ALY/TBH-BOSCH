@@ -570,6 +570,7 @@ def get_employee_files(employee_id: str, db: Session = Depends(get_db)):
 
 @app.post("/api/employee/action")
 def process_employee_action(request: ActionRequest, db: Session = Depends(get_db)):
+    import os
     # Query defensively by both auto-increment id and finding_uid (string UUID)
     finding = None
     if isinstance(request.file_id, int) or (isinstance(request.file_id, str) and request.file_id.isdigit()):
@@ -579,9 +580,35 @@ def process_employee_action(request: ActionRequest, db: Session = Depends(get_db
         finding = db.query(Finding).filter(Finding.finding_uid == str(request.file_id)).first()
         
     if finding:
-        finding.status = "deleted"
-        finding.review_status = "deleted"
+        # Determine explicit finding status based on action
+        action_mapping = {
+            "false_positive": "false_positive",
+            "keep": "kept",
+            "delete": "deleted",
+            "export": "kept",
+            "explain": "needs_review",
+            "resolved": "resolved"
+        }
+        
+        new_status = action_mapping.get(request.action, "resolved")
+        finding.status = new_status
+        finding.review_status = new_status
         finding.owner_resolved = True
+        
+        # Explicitly handle distinction between metadata update vs physical deletion
+        if request.action == "delete":
+            # Physically delete the file from storage if requested
+            if finding.file_id:
+                file_meta = db.query(FileMetadata).filter(FileMetadata.id == finding.file_id).first()
+                if file_meta and not file_meta.file_path.startswith("[DELETED]"):
+                    file_path = file_meta.file_path
+                    try:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                        file_meta.file_path = f"[DELETED] {file_path}"
+                    except Exception:
+                        pass
+        
         db.commit()
         return {"status": "success", "message": f"Processed {request.action} on finding {request.file_id}"}
         

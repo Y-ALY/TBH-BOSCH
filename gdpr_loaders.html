@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GDPR Scan Progress UIs</title>
+    <!-- Use Inter font for a sleek modern look -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Minimalist, neutral palette */
+            --bg-color: #fcfcfd;
+            --text-main: #111827;
+            --text-muted: #6b7280;
+            --accent-color: #6366f1; /* Soft Indigo */
+            --border-color: #e5e7eb;
+            --card-bg: #ffffff;
+            --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            
+            /* Apple/Stripe-like easing curve */
+            --bezier: cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Demo Controls (for easy switching) */
+        .demo-controls {
+            position: fixed;
+            bottom: 32px;
+            right: 32px;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 8px;
+            border-radius: 100px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.03);
+            border: 1px solid rgba(229, 231, 235, 0.5);
+            display: flex;
+            gap: 8px;
+            z-index: 100;
+        }
+
+        .demo-controls button {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 14px;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            padding: 10px 20px;
+            border-radius: 100px;
+            transition: all 0.3s var(--bezier);
+        }
+
+        .demo-controls button:hover {
+            color: var(--text-main);
+        }
+
+        .demo-controls button.active {
+            background: #ffffff;
+            color: var(--text-main);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(229, 231, 235, 0.8);
+        }
+
+        /* Views */
+        .view {
+            display: none;
+            flex: 1;
+            width: 100%;
+        }
+
+        .view.active {
+            display: flex;
+        }
+
+        /* ========================================================
+           COMPONENT 1: Employee Login "Workspace Scan"
+           ======================================================== */
+        #employee-view {
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* Elegant Morphing Shape Loader */
+        .loader-container {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            margin-bottom: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .morphing-shape {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            background-color: rgba(99, 102, 241, 0.08);
+            border: 2px solid rgba(99, 102, 241, 0.3);
+            border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
+            animation: morph 7s ease-in-out infinite, rotate 9s linear infinite;
+        }
+
+        .morphing-shape-inner {
+            position: absolute;
+            width: 48px;
+            height: 48px;
+            background-color: var(--accent-color);
+            border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+            animation: morph 5s ease-in-out infinite reverse, rotate 6s linear infinite reverse;
+            box-shadow: 0 0 30px rgba(99, 102, 241, 0.4);
+        }
+
+        @keyframes morph {
+            0% { border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; }
+            34% { border-radius: 70% 30% 50% 50% / 30% 30% 70% 70%; }
+            67% { border-radius: 100% 60% 60% 100% / 100% 100% 60% 60%; }
+            100% { border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; }
+        }
+
+        @keyframes rotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Status Text Styling */
+        .status-text-container {
+            position: relative;
+            height: 24px;
+            text-align: center;
+            width: 300px;
+        }
+
+        .status-text {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            font-size: 15px;
+            font-weight: 500;
+            letter-spacing: -0.01em;
+            color: var(--text-muted);
+            opacity: 0;
+            white-space: nowrap;
+            transition: opacity 0.8s var(--bezier), transform 0.8s var(--bezier);
+        }
+
+        .status-text.active {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .status-text.entering {
+            opacity: 0;
+            transform: translateX(-50%) translateY(12px);
+        }
+
+        .status-text.exiting {
+            opacity: 0;
+            transform: translateX(-50%) translateY(-12px);
+        }
+
+        /* ========================================================
+           COMPONENT 2: Admin "Live File Discovery" Grid
+           ======================================================== */
+        #admin-view {
+            flex-direction: column;
+            padding: 80px 60px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .admin-header {
+            margin-bottom: 32px;
+        }
+
+        .admin-title {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            letter-spacing: -0.03em;
+            color: var(--text-main);
+        }
+
+        .admin-subtitle {
+            font-size: 15px;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        /* Ultra-thin Linear Progress Bar */
+        .progress-track {
+            width: 100%;
+            height: 2px; /* Ultra-thin */
+            background-color: var(--border-color);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 60px;
+            position: relative;
+        }
+
+        .progress-fill {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 0%;
+            background-color: var(--accent-color);
+            transition: width 0.4s var(--bezier);
+            border-radius: 2px;
+            box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+        }
+
+        /* Dynamic Grid */
+        .discovery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 24px;
+            width: 100%;
+        }
+
+        /* Minimalist Square Cards */
+        .file-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+            
+            /* Initial state for ultra-smooth pop-in */
+            opacity: 0;
+            transform: scale(0.92) translateY(10px);
+            /* Native CSS transition for pop-in using requested cubic-bezier */
+            transition: opacity 0.7s var(--bezier), transform 0.7s var(--bezier);
+        }
+
+        .file-card.show {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+
+        .card-icon {
+            font-size: 26px;
+            background: var(--bg-color);
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border-color);
+        }
+
+        .card-tag {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: rgba(107, 114, 128, 0.08); /* Muted gray bg */
+            padding: 6px 12px;
+            border-radius: 8px;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+        }
+
+        .card-filename {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-main);
+            width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Demo Controls -->
+    <div class="demo-controls">
+        <button id="btn-employee" class="active" onclick="switchView('employee')">Employee Login</button>
+        <button id="btn-admin" onclick="switchView('admin')">Admin Discovery Grid</button>
+    </div>
+
+    <!-- Component 1: Employee Workspace Scan -->
+    <div id="employee-view" class="view active">
+        <div class="loader-container">
+            <div class="morphing-shape"></div>
+            <div class="morphing-shape-inner"></div>
+        </div>
+        <div class="status-text-container" id="status-container">
+            <!-- Text spans injected via JS -->
+        </div>
+    </div>
+
+    <!-- Component 2: Admin Live File Discovery -->
+    <div id="admin-view" class="view">
+        <div class="admin-header">
+            <h1 class="admin-title">Live File Discovery</h1>
+            <p class="admin-subtitle">Scanning massive database for sensitive and non-compliant records...</p>
+        </div>
+        
+        <div class="progress-track">
+            <div class="progress-fill" id="admin-progress"></div>
+        </div>
+
+        <div class="discovery-grid" id="discovery-grid">
+            <!-- Cards injected via JS -->
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // View Switching Logic
+        // ==========================================
+        function switchView(viewName) {
+            document.getElementById('employee-view').classList.remove('active');
+            document.getElementById('admin-view').classList.remove('active');
+            document.getElementById('btn-employee').classList.remove('active');
+            document.getElementById('btn-admin').classList.remove('active');
+
+            if (viewName === 'employee') {
+                document.getElementById('employee-view').classList.add('active');
+                document.getElementById('btn-employee').classList.add('active');
+                startEmployeeAnimation();
+            } else {
+                document.getElementById('admin-view').classList.add('active');
+                document.getElementById('btn-admin').classList.add('active');
+                startAdminSimulation();
+            }
+        }
+
+        // ==========================================
+        // Component 1: Employee Status Text Cycling
+        // ==========================================
+        const statuses = [
+            "Gathering workspace files...",
+            "Evaluating retention policies...",
+            "Checking for sensitive PII...",
+            "Securing dashboard..."
+        ];
+        
+        let employeeInterval;
+        let currentStatusIndex = 0;
+
+        function startEmployeeAnimation() {
+            clearInterval(employeeInterval);
+            const container = document.getElementById('status-container');
+            container.innerHTML = ''; // Reset
+
+            // Create DOM elements for statuses
+            statuses.forEach((status, idx) => {
+                const span = document.createElement('span');
+                span.className = 'status-text';
+                span.textContent = status;
+                span.id = `status-${idx}`;
+                container.appendChild(span);
+            });
+
+            currentStatusIndex = 0;
+            updateEmployeeStatus();
+            
+            // Cycle every 3.5 seconds
+            employeeInterval = setInterval(() => {
+                currentStatusIndex = (currentStatusIndex + 1) % statuses.length;
+                updateEmployeeStatus();
+            }, 3500); 
+        }
+
+        function updateEmployeeStatus() {
+            statuses.forEach((_, idx) => {
+                const el = document.getElementById(`status-${idx}`);
+                if (idx === currentStatusIndex) {
+                    // Current: transition in
+                    el.classList.remove('exiting', 'entering');
+                    void el.offsetWidth; // Force reflow
+                    el.classList.add('active');
+                } else if (idx === (currentStatusIndex - 1 + statuses.length) % statuses.length) {
+                    // Previous: transition out
+                    el.classList.remove('active', 'entering');
+                    el.classList.add('exiting');
+                } else {
+                    // Others: wait in entering position
+                    el.classList.remove('active', 'exiting');
+                    el.classList.add('entering');
+                }
+            });
+        }
+
+        // ==========================================
+        // Component 2: Admin Live Discovery Simulation
+        // ==========================================
+        let adminInterval;
+        let scanProgress = 0;
+        
+        const fileTypes = [
+            { icon: '✈️', tag: 'Flight', prefix: 'Itinerary_LH_' },
+            { icon: '🏥', tag: 'Medical Record', prefix: 'AOK_Claim_' },
+            { icon: '🪪', tag: 'License Card', prefix: 'Führerschein_' },
+            { icon: '💳', tag: 'Credit Card', prefix: 'Visa_Stmt_' },
+            { icon: '📄', tag: 'Tax Document', prefix: 'Steuerbescheid_' }
+        ];
+
+        function startAdminSimulation() {
+            clearInterval(adminInterval);
+            scanProgress = 0;
+            document.getElementById('admin-progress').style.width = '0%';
+            document.getElementById('discovery-grid').innerHTML = '';
+
+            // Simulate progress and finding files over time
+            adminInterval = setInterval(() => {
+                // Random increment for organic progress feel
+                scanProgress += Math.random() * 2 + 0.2; 
+                if (scanProgress > 100) scanProgress = 100;
+                
+                document.getElementById('admin-progress').style.width = `${scanProgress}%`;
+
+                // Randomly "discover" a file
+                // Tweak probabilities to control how many cards pop in
+                if (Math.random() > 0.85 && scanProgress < 98) {
+                    addDiscoveredFile();
+                }
+
+                if (scanProgress === 100) {
+                    clearInterval(adminInterval);
+                    // Add one final file just as it finishes
+                    addDiscoveredFile();
+                }
+            }, 150); // fast tick rate for smooth progress bar
+        }
+
+        function addDiscoveredFile() {
+            const grid = document.getElementById('discovery-grid');
+            const typeInfo = fileTypes[Math.floor(Math.random() * fileTypes.length)];
+            const randomId = Math.floor(Math.random() * 90000) + 10000;
+            const filename = `${typeInfo.prefix}${randomId}.pdf`;
+
+            const card = document.createElement('div');
+            card.className = 'file-card';
+            
+            card.innerHTML = `
+                <div class="card-icon">${typeInfo.icon}</div>
+                <div class="card-tag">${typeInfo.tag}</div>
+                <div class="card-filename" title="${filename}">${filename}</div>
+            `;
+
+            grid.appendChild(card);
+
+            // Trigger the native CSS pop-in animation in the next frame
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    card.classList.add('show');
+                }, 50); // slight delay ensures the transition registers
+            });
+        }
+
+        // Initialize first view on load
+        window.onload = startEmployeeAnimation;
+
+    </script>
+</body>
+</html>

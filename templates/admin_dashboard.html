@@ -343,13 +343,27 @@ document.addEventListener("DOMContentLoaded", async () => {
                 <div style="margin-bottom: 15px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); padding: 8px; border-radius: 2px; font-family: 'Space Grotesk', monospace; font-size: 12px; color: var(--text-secondary);">
                     ${finding.flagged_snippet}
                 </div>
-                <button 
-                    onclick="handleDelete(${finding.finding_id})"
-                    style="padding: 8px 16px; background: transparent; color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 2px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13px; transition: all 0.3s ease;"
-                    onmouseover="this.style.background='var(--bg-card-hover)'; this.style.borderColor='var(--border-hover)'"
-                    onmouseout="this.style.background='transparent'; this.style.borderColor='var(--border-subtle)'">
-                    Resolve Issue
-                </button>
+                <div style="position: relative; display: inline-block; margin-top: 5px;" class="action-dropdown-container">
+                    <button 
+                        onclick="toggleActionMenu('menu-${finding.finding_id}')"
+                        style="padding: 8px 16px; background: transparent; color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 4px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13px; transition: all 0.2s ease; display: flex; align-items: center; gap: 8px;"
+                        onmouseover="this.style.background='var(--bg-card-hover)'; this.style.borderColor='var(--border-hover)'"
+                        onmouseout="this.style.background='transparent'; this.style.borderColor='var(--border-subtle)'">
+                        Take Action
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                    <div id="menu-${finding.finding_id}" class="action-dropdown-menu" style="display: none; position: absolute; top: 100%; left: 0; margin-top: 8px; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); min-width: 230px; z-index: 100; overflow: hidden; font-family: 'Inter', sans-serif;">
+                        <div style="padding: 6px;">
+                            <button onclick="handleAction('${finding.finding_id}', 'false_positive', 'This is not personal data')" class="action-menu-item" style="width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; color: var(--text-primary); cursor: pointer; border-radius: 4px; transition: background 0.2s ease;">This is not personal data</button>
+                            <button onclick="handleAction('${finding.finding_id}', 'false_positive', 'False positive')" class="action-menu-item" style="width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; color: var(--text-primary); cursor: pointer; border-radius: 4px; transition: background 0.2s ease;">False positive</button>
+                            <button onclick="handleAction('${finding.finding_id}', 'keep', 'Keep this file')" class="action-menu-item" style="width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; color: var(--text-primary); cursor: pointer; border-radius: 4px; transition: background 0.2s ease;">Keep this file</button>
+                            <button onclick="handleAction('${finding.finding_id}', 'export', 'Export my data')" class="action-menu-item" style="width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; color: var(--text-primary); cursor: pointer; border-radius: 4px; transition: background 0.2s ease;">Export my data</button>
+                            <button onclick="handleAction('${finding.finding_id}', 'explain', 'Explain why this was flagged')" class="action-menu-item" style="width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; color: var(--text-primary); cursor: pointer; border-radius: 4px; transition: background 0.2s ease;">Explain why this was flagged</button>
+                            <div style="height: 1px; background: var(--border-subtle); margin: 6px 0;"></div>
+                            <button onclick="handleAction('${finding.finding_id}', 'delete', 'Request deletion')" class="action-menu-item" style="width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; color: #ff4d6a; cursor: pointer; border-radius: 4px; transition: background 0.2s ease; font-weight: 500;">Request deletion</button>
+                        </div>
+                    </div>
+                </div>
             `;
             alertsGrid.appendChild(card);
         });
@@ -359,23 +373,47 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 });
 
-// Wiring up the 'Resolve' button to your /api/employee/action endpoint
-async function handleDelete(findingId) {
-    const isConfirmed = await window.customConfirm("Are you sure you want to mark this issue as resolved?");
+// Dropdown functionality
+function toggleActionMenu(menuId) {
+    document.querySelectorAll('.action-dropdown-menu').forEach(menu => {
+        if (menu.id !== menuId) menu.style.display = 'none';
+    });
+    const menu = document.getElementById(menuId);
+    if (menu) {
+        menu.style.display = menu.style.display === 'none' || !menu.style.display ? 'block' : 'none';
+    }
+}
+
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.action-dropdown-container')) {
+        document.querySelectorAll('.action-dropdown-menu').forEach(menu => {
+            menu.style.display = 'none';
+        });
+    }
+});
+
+// Wiring up explicit user action options to /api/employee/action endpoint
+async function handleAction(findingId, actionType, actionLabel) {
+    // Hide all open menus first
+    document.querySelectorAll('.action-dropdown-menu').forEach(m => m.style.display = 'none');
+    
+    const isConfirmed = await window.customConfirm(`Are you sure you want to proceed with: "${actionLabel}"?`);
     if(!isConfirmed) return;
     
     try {
         const response = await fetch('/api/employee/action', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ file_id: findingId, action: "delete" })
+            body: JSON.stringify({ file_id: findingId, action: actionType })
         });
         
         if(response.ok) {
             window.location.reload(); 
+        } else {
+            alert("Failed to resolve issue.");
         }
     } catch (error) {
-        alert("Failed to resolve issue.");
+        alert("Failed to resolve issue due to network error.");
     }
 }
 // --- Dynamic Data Overview Stats ---
