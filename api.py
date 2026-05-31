@@ -67,11 +67,15 @@ from sqlalchemy.orm import Session
 # ── Internal pipeline imports ────────────────────────────────────────────────
 from src.connector import LocalSampleRepoConnector
 from src.scanner import run_ai_scan, run_full_scan
+from src.discovery import discover_local
+from src.delta_planner import DeltaPlanner
 from src.models import (
     Finding as FindingDC,
     ScanResult as ScanResultDC,
     ScanMetrics as ScanMetricsDC,
+    ScanOptions,
     FileRef,
+    FileScanResult,
     ALLOWED_REVIEW_ACTIONS,
 )
 
@@ -299,12 +303,20 @@ def _run_background_scan(
     ai_mode: str,
     strict_hash: bool,
 ) -> None:
-    """Execute a scan in a background thread and update the ScanJob record."""
+    """Execute a scan in a background thread using the streaming + delta pipeline.
+
+    Flow:
+      1. discover_local(folder_path) -> FileRef iterator
+      2. DeltaPlanner.plan(files, options) -> plan.to_scan / plan.to_skip
+      3. run_streaming_scan(plan.to_scan) with on_result/on_error callbacks
+      4. Save delta state via DeltaPlanner.save_state()
+      5. Update ScanJob to completed/failed
+    """
     db = SessionLocal()
     t_start = time.perf_counter()
 
     try:
-        # ── Update job to running ──────────────────────────────────────
+        # ── Update job to running ────────────────────────────────────────
         job = db.query(ScanJobORM).filter(ScanJobORM.scan_id == scan_id).first()
         if not job:
             logger.error("ScanJob %s not found in DB", scan_id)
@@ -313,66 +325,142 @@ def _run_background_scan(
         job.started_at = datetime.now().isoformat()
         db.commit()
 
-        # ── Set up connector and bulk writer ────────────────────────────
-        connector = LocalSampleRepoConnector(repo_path=str(folder_path))
+        # ── 1. Discover files ────────────────────────────────────────────
+        t_discovery = time.perf_counter()
+        all_files = list(discover_local(folder_path))
+        discovery_time_ms = (time.perf_counter() - t_discovery) * 1000
+        logger.info("Discovery complete: %d files in %.0f ms", len(all_files), discovery_time_ms)
+
+        # ── 2. Delta planning ────────────────────────────────────────────
+        t_delta = time.perf_counter()
+        planner = DeltaPlanner()
+        options = ScanOptions(mode=mode, ai_mode=ai_mode, strict_hash=strict_hash)
+        plan = planner.plan(iter(all_files), options)
+        delta_time_ms = (time.perf_counter() - t_delta) * 1000
+
+        job.total_files = plan.total_discovered
+        job.files_skipped = len(plan.to_skip)
+        db.commit()
+        logger.info(
+            "Delta plan: %d total, %d to scan, %d skipped, %d missing (%.1f ms)",
+            plan.total_discovered,
+            len(plan.to_scan),
+            len(plan.to_skip),
+            len(plan.missing),
+            delta_time_ms,
+        )
+
+        # ── 3. Bulk writer for findings and file metadata ─────────────────
         writer = BulkWriter(db, batch_size=500)
 
-        # ── Persist FileMetadata via BulkWriter (no duplicate list_files call) ──
-        files = connector.list_files()
-        job.total_files = len(files)
-        db.commit()
+        # Track file states for scanned files (new or changed)
+        for fr in plan.to_scan:
+            writer.add_file_state(fr, content_hash="")
 
-        for file_meta in files:
-            fr = FileRef(
-                file_id=file_meta.file_id,
-                file_name=file_meta.file_name,
-                path_or_uri=file_meta.path,
-                source_type="local",
-                size_bytes=file_meta.size_bytes,
-                last_modified=file_meta.last_modified,
-                etag_or_version="",
+        # ── 4. Set up streaming scan callbacks ────────────────────────────
+        connector = LocalSampleRepoConnector(repo_path=str(folder_path))
+        scanned_results: list[FileScanResult] = []
+        error_count = 0
+
+        def on_result(file_result: FileScanResult) -> None:
+            # Persist findings via BulkWriter (batched upsert)
+            for f in file_result.findings:
+                writer.add_finding(f)
+            scanned_results.append(file_result)
+
+        def on_error(file_error) -> None:
+            nonlocal error_count
+            error_count += 1
+            # Persist error record immediately
+            error_record = ScanErrorORM(
+                scan_id=scan_id,
+                file_id=file_error.file_id,
+                file_name=file_error.file_name,
+                error_type=file_error.error_type,
+                message=file_error.message,
             )
-            writer.add_file_state(fr, content_hash=file_meta.content_hash)
+            db.add(error_record)
+            db.flush()
 
-        # ── Run the scanner ──────────────────────────────────────────────
+        # ── 5. Run streaming scan ────────────────────────────────────────
+        t_scan = time.perf_counter()
         ai_parser = _ai_parser if ai_mode != "off" else None
-        result: ScanResultDC = run_ai_scan(connector, ai_parser=ai_parser, db_session=db)
 
-        # ── Persist findings via BulkWriter ──────────────────────────────
-        for f in result.findings:
-            writer.add_finding(f)
+        if plan.to_scan and _streaming_available and _streaming_scan is not None:
+            metrics = _streaming_scan(
+                connector,
+                iter(plan.to_scan),
+                options,
+                db_session=db,
+                on_result=on_result,
+                on_error=on_error,
+            )
+        elif plan.to_scan:
+            # Fallback: streaming scanner not available — use ai_scan
+            # This should rarely happen; _streaming_scan is always available
+            logger.warning(
+                "Streaming scanner not available, falling back to run_ai_scan "
+                "for %d files", len(plan.to_scan)
+            )
+            result: ScanResultDC = run_ai_scan(connector, ai_parser=ai_parser, db_session=db)
+            for f in result.findings:
+                writer.add_finding(f)
+            metrics = ScanMetricsDC(
+                scan_id=scan_id,
+                total_files=len(plan.to_scan),
+                files_scanned=result.files_scanned,
+                total_findings=len(result.findings),
+                total_time_ms=(time.perf_counter() - t_scan) * 1000,
+            )
+        else:
+            # No files to scan
+            metrics = ScanMetricsDC(scan_id=scan_id)
 
-        # ── Flush remaining records ──────────────────────────────────────
+        # ── 6. Flush remaining records ────────────────────────────────────
         rows = writer.flush()
         db.commit()
 
+        # ── 7. Save delta state (snapshot all discovered files) ───────────
+        try:
+            # Build minimal FileScanResult wrappers for every discovered file
+            # so the next scan's DeltaPlanner can compare against them.
+            state_results = [FileScanResult(file_ref=fr) for fr in all_files]
+            planner.save_state(scan_id, iter(state_results))
+        except Exception as state_err:
+            logger.warning("Failed to save delta state: %s", state_err)
+
+        # ── 8. Compute final metrics ──────────────────────────────────────
         total_time_ms = (time.perf_counter() - t_start) * 1000
 
-        # ── Store metrics ────────────────────────────────────────────────
-        metrics = {
-            "total_time_ms": total_time_ms,
+        scan_metrics = {
+            "discovery_time_ms": discovery_time_ms,
+            "delta_time_ms": delta_time_ms,
+            "parse_time_ms": getattr(metrics, "parse_time_ms", 0.0),
+            "regex_time_ms": getattr(metrics, "regex_time_ms", 0.0),
             "db_write_time_ms": writer.total_write_time_ms,
-            "parse_time_ms": 0.0,
-            "regex_time_ms": 0.0,
+            "total_time_ms": total_time_ms,
+            "skip_ratio": plan.skip_ratio,
         }
-        files_per_second = result.files_scanned / (total_time_ms / 1000) if total_time_ms > 0 else 0
 
-        # ── Update job as completed ──────────────────────────────────────
+        # ── 9. Update job as completed ────────────────────────────────────
         job.status = "completed"
         job.completed_at = datetime.now().isoformat()
-        job.total_files = result.files_scanned
-        job.files_scanned = result.files_scanned
-        job.files_skipped = 0
-        job.files_error = 0
-        job.total_findings = len(result.findings)
-        job.metrics_json = json.dumps(metrics)
+        job.total_files = plan.total_discovered
+        job.files_scanned = getattr(metrics, "files_scanned", 0)
+        job.files_error = error_count
+        job.total_findings = getattr(metrics, "total_findings", 0)
+        job.metrics_json = json.dumps(scan_metrics)
         db.commit()
 
         logger.info(
-            "Background scan %s complete: %d files, %d findings in %.0f ms (DB write: %.0f ms, %d flushes, %d rows)",
+            "Background scan %s complete: %d discovered, %d scanned, %d skipped, "
+            "%d errors, %d findings in %.0f ms (DB write: %.0f ms, %d flushes, %d rows)",
             scan_id,
-            result.files_scanned,
-            len(result.findings),
+            plan.total_discovered,
+            getattr(metrics, "files_scanned", 0),
+            len(plan.to_skip),
+            error_count,
+            getattr(metrics, "total_findings", 0),
             total_time_ms,
             writer.total_write_time_ms,
             writer.flush_count,

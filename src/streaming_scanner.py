@@ -22,6 +22,7 @@ from .models import (
     ScanMetrics,
     ScanOptions,
 )
+from .owner import assign_owners
 from .pdf_parser import parse_pdf
 from .classifier import extract_entities, classify_context
 from .scanner import _extract_fields
@@ -70,6 +71,7 @@ def run_streaming_scan(
     options: ScanOptions | None = None,
     *,
     db_session=None,
+    owner_hints: dict | None = None,
     on_result: Callable[[FileScanResult], None] | None = None,
     on_error: Callable[[FileScanError], None] | None = None,
 ) -> ScanMetrics:
@@ -83,15 +85,18 @@ def run_streaming_scan(
       2. Parse PDF via ProcessPoolExecutor (CPU-heavy)
       3. Extract entities via regex (CPU-light)
       4. Classify document type
-      5. Build FileScanResult with per-file metrics
-      6. Call on_result(file_scan_result) immediately
-      7. Release all per-file memory
+      5. Set file_id on each finding
+      6. Assign owners via the 3-tier resolution strategy
+      7. Build FileScanResult with per-file metrics
+      8. Call on_result(file_scan_result) immediately
+      9. Release all per-file memory
 
     Args:
         connector:   Data source connector.
         file_refs:   Iterator of FileRef objects to scan.
         options:     Scan configuration (mode, ai_mode, max_workers, etc.).
-        db_session:  Optional SQLAlchemy session (placeholder).
+        db_session:  Optional SQLAlchemy session (for owner lookups).
+        owner_hints: Optional dict of owner hints (overrides connector hints).
         on_result:   Called with each FileScanResult as it completes.
         on_error:    Called with each FileScanError for non-fatal failures.
     """
@@ -166,6 +171,20 @@ def run_streaming_scan(
 
                 regex_time_ms = (time.monotonic() - regex_start) * 1000
                 metrics.regex_time_ms += regex_time_ms
+
+                # ── 4b. Set file_id and assign owners ──
+                for f in findings:
+                    f.file_id = file_ref.file_id
+
+                # Resolve owner hints: explicit parameter overrides connector
+                hints = owner_hints if owner_hints is not None else connector.get_owner_hints(file_ref.file_id)
+                assign_owners(
+                    findings,
+                    hints,
+                    file_path=file_ref.path_or_uri,
+                    fields=fields,
+                    db_session=db_session,
+                )
 
                 # ── 5. Build per-file result ──
                 result = FileScanResult(

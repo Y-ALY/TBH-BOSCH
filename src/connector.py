@@ -137,12 +137,13 @@ class LocalSampleRepoConnector(Connector):
             return []
 
         files = []
-        for pdf_path in sorted(self.repo_path.glob("*.pdf")):
+        for pdf_path in sorted(self.repo_path.rglob("*.pdf")):
             try:
                 stat = pdf_path.stat()
                 content_hash = self._hash_file(pdf_path)
+                rel_path = str(pdf_path.relative_to(self.repo_path))
                 files.append(FileMetadata(
-                    file_id=f"local:{pdf_path.name}",
+                    file_id=f"local:{rel_path}",
                     file_name=pdf_path.name,
                     path=str(pdf_path),
                     size_bytes=stat.st_size,
@@ -164,12 +165,13 @@ class LocalSampleRepoConnector(Connector):
         if not self.repo_path.exists():
             return
 
-        for pdf_path in sorted(self.repo_path.glob("*.pdf")):
+        for pdf_path in self.repo_path.rglob("*.pdf"):
             try:
                 stat = pdf_path.stat()
                 etag = f"mtime:{stat.st_mtime:.0f}:size:{stat.st_size}"
+                rel_path = str(pdf_path.relative_to(self.repo_path))
                 yield FileRef(
-                    file_id=f"local:{pdf_path.name}",
+                    file_id=f"local:{rel_path}",
                     file_name=pdf_path.name,
                     path_or_uri=str(pdf_path),
                     source_type="local",
@@ -188,13 +190,17 @@ class LocalSampleRepoConnector(Connector):
         file_name = self._resolve_file_id(file_id)
         if file_name is None:
             return None
-        pdf_path = self.repo_path / file_name
+        candidate = Path(file_name)
+        if candidate.is_absolute():
+            pdf_path = candidate
+        else:
+            pdf_path = self.repo_path / file_name
         if not pdf_path.exists():
             return None
         stat = pdf_path.stat()
         return FileMetadata(
             file_id=file_id,
-            file_name=file_name,
+            file_name=pdf_path.name,
             path=str(pdf_path),
             size_bytes=stat.st_size,
             last_modified=datetime.fromtimestamp(stat.st_mtime).isoformat(),
@@ -209,7 +215,11 @@ class LocalSampleRepoConnector(Connector):
         file_name = self._resolve_file_id(file_id)
         if file_name is None:
             raise FileNotFoundError(f"Cannot resolve file_id: {file_id}")
-        pdf_path = self.repo_path / file_name
+        candidate = Path(file_name)
+        if candidate.is_absolute():
+            pdf_path = candidate
+        else:
+            pdf_path = self.repo_path / file_name
         return pdf_path.read_bytes()
 
     # ------------------------------------------------------------------
@@ -218,10 +228,7 @@ class LocalSampleRepoConnector(Connector):
 
     def open_file(self, file_ref: FileRef) -> BinaryIO:
         """Open a file for streaming reads. Caller must close the returned handle."""
-        file_name = self._resolve_file_id(file_ref.file_id)
-        if file_name is None:
-            raise FileNotFoundError(f"Cannot resolve file_id: {file_ref.file_id}")
-        pdf_path = self.repo_path / file_name
+        pdf_path = self._resolve_path(file_ref)
         return open(pdf_path, "rb")
 
     # ------------------------------------------------------------------
@@ -230,7 +237,8 @@ class LocalSampleRepoConnector(Connector):
 
     def get_owner_hints(self, file_id: str) -> dict:
         file_name = self._resolve_file_id(file_id)
-        return self._owner_hints.get(file_name or file_id, {})
+        lookup_key = Path(file_name).name if file_name else file_id
+        return self._owner_hints.get(lookup_key or file_id, {})
 
     # ------------------------------------------------------------------
     # get_change_token
@@ -239,7 +247,7 @@ class LocalSampleRepoConnector(Connector):
     def get_change_token(self) -> str:
         """Hash of (name, mtime, size) for all PDFs — a cheap change fingerprint."""
         hasher = hashlib.sha256()
-        for pdf_path in sorted(self.repo_path.glob("*.pdf")):
+        for pdf_path in sorted(self.repo_path.rglob("*.pdf")):
             try:
                 stat = pdf_path.stat()
                 token = f"{pdf_path.name}|{stat.st_mtime}|{stat.st_size}"
@@ -253,10 +261,35 @@ class LocalSampleRepoConnector(Connector):
     # ------------------------------------------------------------------
 
     def _resolve_file_id(self, file_id: str) -> str | None:
-        """Strip 'local:' prefix if present, return the bare file name."""
+        """Strip 'local:' prefix if present, return the path portion.
+
+        Returns the bare path — may be relative (subdir/file.pdf) from
+        iter_files/discover_local, or absolute from discover_local().
+        """
         if file_id.startswith("local:"):
             return file_id[len("local:"):]
         return file_id
+
+    def _resolve_path(self, file_ref: FileRef) -> Path:
+        """Resolve a FileRef to an absolute filesystem path.
+
+        Prefers file_ref.path_or_uri when available (discover_local always
+        sets it to the absolute path).  Falls back to resolving file_id
+        relative to repo_path.
+        """
+        if file_ref.path_or_uri:
+            candidate = Path(file_ref.path_or_uri)
+            if candidate.exists():
+                return candidate
+
+        # Fallback: resolve file_id relative to repo_path
+        file_name = self._resolve_file_id(file_ref.file_id)
+        if file_name is None:
+            raise FileNotFoundError(f"Cannot resolve file_id: {file_ref.file_id}")
+        candidate = Path(file_name)
+        if candidate.is_absolute():
+            return candidate
+        return self.repo_path / file_name
 
     @staticmethod
     def _hash_file(path: Path) -> str:

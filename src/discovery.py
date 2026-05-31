@@ -48,7 +48,7 @@ def discover_local(path: str, recursive: bool = True) -> Iterator[FileRef]:
     else:
         walker = base.glob("*.pdf")
 
-    for pdf_path in sorted(walker):
+    for pdf_path in walker:
         try:
             stat = pdf_path.stat()
         except OSError as e:
@@ -62,7 +62,7 @@ def discover_local(path: str, recursive: bool = True) -> Iterator[FileRef]:
         mtime_ts = stat.st_mtime
         etag = f"{mtime_ts:.0f}_{stat.st_size}"
         yield FileRef(
-            file_id=f"local:{pdf_path.name}",
+            file_id=f"local:{str(pdf_path.relative_to(base))}",
             file_name=pdf_path.name,
             path_or_uri=str(pdf_path),
             source_type="local",

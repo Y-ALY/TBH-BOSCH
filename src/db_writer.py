@@ -71,6 +71,19 @@ class BulkWriter:
         self._total_write_time_ms: float = 0.0
         self._total_rows_written: int = 0
 
+        # Lazy-loaded cache of existing file paths to avoid N+1 queries in
+        # add_file_state().  Remains None until the first add_file_state() call.
+        self._existing_paths: set[str] | None = None
+
+    def _preload_existing_paths(self) -> None:
+        """Load all known file_path values from the DB into a set once."""
+        if self._existing_paths is not None:
+            return
+        from database import FileMetadata as FileMetadataORM
+        self._existing_paths = set(
+            row[0] for row in self._db.query(FileMetadataORM.file_path).all()
+        )
+
     # ------------------------------------------------------------------
     # public API
     # ------------------------------------------------------------------
@@ -80,26 +93,30 @@ class BulkWriter:
 
         The record is held in memory; it is not written until ``flush()``
         is called (or the batch size triggers an auto-flush).
+
+        Uses a lazily-loaded set of existing file paths so that the first
+        scan of a large repository does not incur one DB query per file.
         """
         from database import FileMetadata as FileMetadataORM
 
-        # Check whether this path already exists in the DB
-        existing = (
-            self._db.query(FileMetadataORM)
-            .filter(FileMetadataORM.file_path == file_ref.path_or_uri)
-            .first()
-        )
+        self._preload_existing_paths()
 
-        if existing:
+        if file_ref.path_or_uri in self._existing_paths:
             # Update in place
-            existing.size_bytes = file_ref.size_bytes
-            try:
-                existing.last_modified = datetime.fromisoformat(file_ref.last_modified)
-            except (ValueError, TypeError):
-                existing.last_modified = datetime.now()
-            if content_hash:
-                existing.file_hash = content_hash
-            self._db.flush()
+            existing = (
+                self._db.query(FileMetadataORM)
+                .filter(FileMetadataORM.file_path == file_ref.path_or_uri)
+                .first()
+            )
+            if existing:
+                existing.size_bytes = file_ref.size_bytes
+                try:
+                    existing.last_modified = datetime.fromisoformat(file_ref.last_modified)
+                except (ValueError, TypeError):
+                    existing.last_modified = datetime.now()
+                if content_hash:
+                    existing.file_hash = content_hash
+                self._db.flush()
             return
 
         # Flush first if buffer is at capacity — the new item stays buffered
@@ -121,6 +138,7 @@ class BulkWriter:
             "retention_deadline": datetime.now() + timedelta(days=200),
         }
         self._file_states.append(row)
+        self._existing_paths.add(file_ref.path_or_uri)
 
     def add_finding(self, finding: Finding) -> None:
         """Queue a finding for bulk insert/upsert.
