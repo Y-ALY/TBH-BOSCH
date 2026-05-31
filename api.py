@@ -285,6 +285,7 @@ def _run_background_scan(
         job.total_files = len(files)
         db.commit()
 
+        file_refs = []
         for file_meta in files:
             fr = FileRef(
                 file_id=file_meta.file_id,
@@ -296,14 +297,22 @@ def _run_background_scan(
                 etag_or_version="",
             )
             writer.add_file_state(fr, content_hash=file_meta.content_hash)
+            file_refs.append(fr)
 
         # ── Run the scanner ──────────────────────────────────────────────
-        ai_parser = _ai_parser if ai_mode != "off" else None
-        result: ScanResultDC = run_ai_scan(connector, ai_parser=ai_parser, db_session=db)
-
-        # ── Persist findings via BulkWriter ──────────────────────────────
-        for f in result.findings:
-            writer.add_finding(f)
+        from src.streaming_scanner import run_streaming_scan
+        from src.models import ScanOptions, FileScanResult
+        
+        def handle_result(r: FileScanResult):
+            for f in r.findings:
+                writer.add_finding(f)
+                
+        metrics = run_streaming_scan(
+            connector,
+            iter(file_refs),
+            ScanOptions(mode=mode, max_workers=os.cpu_count() or 4),
+            on_result=handle_result
+        )
 
         # ── Flush remaining records ──────────────────────────────────────
         rows = writer.flush()
@@ -312,30 +321,30 @@ def _run_background_scan(
         total_time_ms = (time.perf_counter() - t_start) * 1000
 
         # ── Store metrics ────────────────────────────────────────────────
-        metrics = {
+        metrics_dict = {
             "total_time_ms": total_time_ms,
             "db_write_time_ms": writer.total_write_time_ms,
-            "parse_time_ms": 0.0,
-            "regex_time_ms": 0.0,
+            "parse_time_ms": getattr(metrics, "parse_time_ms", 0.0),
+            "regex_time_ms": getattr(metrics, "regex_time_ms", 0.0),
         }
-        files_per_second = result.files_scanned / (total_time_ms / 1000) if total_time_ms > 0 else 0
+        files_per_second = metrics.files_scanned / (total_time_ms / 1000) if total_time_ms > 0 else 0
 
         # ── Update job as completed ──────────────────────────────────────
         job.status = "completed"
         job.completed_at = datetime.now().isoformat()
-        job.total_files = result.files_scanned
-        job.files_scanned = result.files_scanned
-        job.files_skipped = 0
-        job.files_error = 0
-        job.total_findings = len(result.findings)
-        job.metrics_json = json.dumps(metrics)
+        job.total_files = metrics.files_scanned
+        job.files_scanned = metrics.files_scanned
+        job.files_skipped = getattr(metrics, "files_skipped", 0)
+        job.files_error = getattr(metrics, "files_error", 0)
+        job.total_findings = metrics.total_findings
+        job.metrics_json = json.dumps(metrics_dict)
         db.commit()
 
         logger.info(
             "Background scan %s complete: %d files, %d findings in %.0f ms (DB write: %.0f ms, %d flushes, %d rows)",
             scan_id,
-            result.files_scanned,
-            len(result.findings),
+            metrics.files_scanned,
+            metrics.total_findings,
             total_time_ms,
             writer.total_write_time_ms,
             writer.flush_count,
