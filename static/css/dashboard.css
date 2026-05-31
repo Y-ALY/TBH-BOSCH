@@ -39,9 +39,9 @@
     --topbar-h: 72px;
     --sidebar-w: 250px;
     --sidebar-w-collapsed: 76px;
-    --radius-sm: 10px;
-    --radius-md: 16px;
-    --radius-lg: 24px;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
 
     /* ---- Transitions ---- */
     --transition-theme: background 0.5s ease, color 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease;
@@ -191,40 +191,50 @@ body::after {
 }
 
 .menu-btn {
-    width: 42px;
-    height: 42px;
+    width: 38px;
+    height: 38px;
     border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--text-primary);
     cursor: pointer;
     font-size: 20px;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .menu-btn:hover {
-    transform: scale(1.08);
-    border-color: var(--accent-red);
-    color: var(--accent-red);
-    box-shadow: 0 0 20px rgba(234,0,22,0.15);
+    border-color: var(--border-hover);
+    background: var(--bg-card-hover);
 }
 
 /* ---- Theme Toggle Button ---- */
 .theme-toggle {
-    font-size: 18px;
+    font-size: 0; /* Hide text if any */
     position: relative;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .theme-toggle::after {
-    content: "🌙";
-    font-size: 18px;
+    content: "";
+    display: block;
+    width: 20px;
+    height: 20px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23f0f0f5' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z'%3E%3C/path%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    transition: background-image 0.3s ease;
 }
 
 body.light .theme-toggle::after {
-    content: "☀️";
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%231a1a2e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='5'%3E%3C/circle%3E%3Cline x1='12' y1='1' x2='12' y2='3'%3E%3C/line%3E%3Cline x1='12' y1='21' x2='12' y2='23'%3E%3C/line%3E%3Cline x1='4.22' y1='4.22' x2='5.64' y2='5.64'%3E%3C/line%3E%3Cline x1='18.36' y1='18.36' x2='19.78' y2='19.78'%3E%3C/line%3E%3Cline x1='1' y1='12' x2='3' y2='12'%3E%3C/line%3E%3Cline x1='21' y1='12' x2='23' y2='12'%3E%3C/line%3E%3Cline x1='4.22' y1='19.78' x2='5.64' y2='18.36'%3E%3C/line%3E%3Cline x1='18.36' y1='5.64' x2='19.78' y2='4.22'%3E%3C/line%3E%3C/svg%3E");
 }
 
 /* =========================================
@@ -278,18 +288,16 @@ body.light .account-btn:hover {
 }
 
 .avatar-small {
-    width: 42px;
-    height: 42px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent-red), var(--accent-blue));
+    background: var(--accent-blue);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 700;
-    font-size: 15px;
-    border: 2px solid rgba(255,255,255,0.15);
-    box-shadow: 0 3px 15px rgba(234,0,22,0.2);
+    font-weight: 600;
+    font-size: 14px;
     flex-shrink: 0;
 }
 
@@ -327,8 +335,8 @@ body.light .account-btn:hover {
 }
 
 .account-menu a:hover {
-    background: var(--accent-red-soft);
-    color: var(--accent-red);
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
 }
 
 /* =========================================
@@ -393,31 +401,30 @@ body.light .account-btn:hover {
 
 .sidebar a:hover {
     color: var(--text-primary);
-    background: rgba(234,0,22,0.06);
-    border-left-color: var(--accent-red);
-    transform: translateX(4px);
+    background: var(--bg-card-hover);
+    border-left-color: var(--border-hover);
 }
 
 .sidebar a:hover svg {
     opacity: 1;
-    color: var(--accent-red);
-    stroke: var(--accent-red);
+    color: var(--text-primary);
+    stroke: var(--text-primary);
 }
 
 .sidebar a:active {
-    transform: scale(0.97);
+    transform: scale(0.98);
 }
 
 .sidebar a.active {
-    background: var(--accent-red-soft);
-    color: var(--accent-red);
-    font-weight: 600;
-    border-left: 3px solid var(--accent-red);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-weight: 500;
+    border-left: 3px solid var(--accent-blue);
 }
 
 .sidebar a.active svg {
     opacity: 1;
-    stroke: var(--accent-red);
+    stroke: var(--accent-blue);
 }
 
 /* =========================================
@@ -478,35 +485,16 @@ body.light .account-btn:hover {
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-card);
-    transition: all 0.4s cubic-bezier(0.4,0,0.2,1);
+    transition: all 0.3s ease;
     position: relative;
     overflow: hidden;
 }
 
-.glass-card::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: linear-gradient(
-        135deg,
-        rgba(234,0,22,0.02) 0%,
-        transparent 40%,
-        rgba(0,123,192,0.02) 100%
-    );
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.4s ease;
-}
+/* Removed .glass-card::before inner gradient to reduce clutter */
 
 .glass-card:hover {
-    transform: translateY(-4px);
     border-color: var(--border-hover);
     box-shadow: var(--shadow-card-hover);
-}
-
-.glass-card:hover::before {
-    opacity: 1;
 }
 
 /* =========================================
@@ -520,18 +508,17 @@ body.light .account-btn:hover {
 }
 
 .profile-avatar {
-    width: 100px;
-    height: 100px;
+    width: 80px;
+    height: 80px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent-red), var(--accent-blue));
+    background: var(--accent-blue);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 32px;
-    font-weight: 700;
+    font-size: 28px;
+    font-weight: 600;
     flex-shrink: 0;
-    box-shadow: 0 8px 30px rgba(234,0,22,0.2);
 }
 
 .profile-right h2 {
@@ -596,7 +583,7 @@ body.light .account-btn:hover {
 
 .stat-card h3 {
     font-size: 36px;
-    font-weight: 800;
+    font-weight: 500; /* Thinner font stroke */
     margin-bottom: 8px;
     font-family: 'Space Grotesk', sans-serif;
 }
@@ -618,17 +605,12 @@ body.light .account-btn:hover {
 }
 
 .stat-link:hover {
-    border-color: var(--accent-red);
-    box-shadow: 0 0 30px rgba(234,0,22,0.1), var(--shadow-card-hover);
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-card-hover);
 }
 
 .stat-link:hover h3 {
-    background: var(--gradient-hero);
-    background-size: 300% 300%;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    animation: gradientShift 4s ease infinite;
+    color: var(--accent-blue);
 }
 
 /* =========================================
@@ -646,7 +628,7 @@ body.light .account-btn:hover {
 
 .alert-card h3 {
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 500; /* Thinner font stroke */
     margin-bottom: 6px;
 }
 
@@ -682,48 +664,32 @@ body.light .account-btn:hover {
 
 .action-btn,
 .explore-btn {
-    padding: 16px 24px;
+    padding: 12px 20px;
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    font-weight: 600;
+    font-weight: 500;
     font-size: 14px;
     font-family: 'Inter', sans-serif;
     cursor: pointer;
     background: var(--bg-card);
     color: var(--text-primary);
-    transition: all 0.35s ease;
+    transition: all 0.2s ease;
     position: relative;
     overflow: hidden;
 }
 
-.action-btn::before,
-.explore-btn::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: linear-gradient(90deg, var(--accent-red), var(--accent-blue));
-    opacity: 0;
-    transition: opacity 0.35s ease;
-    z-index: -1;
-}
-
 .action-btn:hover,
 .explore-btn:hover {
-    color: white;
-    border-color: transparent;
-    transform: translateY(-3px);
-    box-shadow: 0 10px 30px rgba(234,0,22,0.15);
-}
-
-.action-btn:hover::before,
-.explore-btn:hover::before {
-    opacity: 1;
+    color: var(--text-primary);
+    background: var(--bg-card-hover);
+    border-color: var(--border-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-card);
 }
 
 .action-btn:active,
 .explore-btn:active {
-    transform: translateY(-1px) scale(0.98);
+    transform: translateY(0) scale(0.98);
 }
 
 /* =========================================
@@ -744,7 +710,7 @@ body.light .account-btn:hover {
 
 .explorer h2 {
     font-size: 24px;
-    font-weight: 700;
+    font-weight: 500; /* Thinner font stroke */
 }
 
 .explorer p {

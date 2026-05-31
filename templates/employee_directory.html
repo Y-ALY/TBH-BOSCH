@@ -45,11 +45,11 @@
     <button class="account-btn" onclick="toggleAccountMenu()">
 
         <div class="avatar-small">
-            EA
+            {% if user %}{{ user.first_name[0] }}{{ user.last_name[0] }}{% else %}EA{% endif %}
         </div>
 
         <div class="account-info">
-            <strong>Eyad Adly</strong>
+            <strong>{% if user %}{{ user.first_name }} {{ user.last_name }}{% else %}Eyad Adly{% endif %}</strong>
             <span>Employee</span>
         </div>
 
@@ -137,7 +137,7 @@
             associated files and GDPR findings.
         </p>
 
-        <form class="search-form" id="searchForm" onsubmit="return false;">
+        <form class="search-form" id="searchForm" onsubmit="return false;" style="display: flex; gap: 10px; flex-wrap: wrap;">
 
             <input
                 type="text"
@@ -145,7 +145,18 @@
                 id="searchInput"
                 placeholder="Search by Name, Email, or User ID..."
                 autocomplete="off"
+                style="flex-grow: 1;"
             >
+
+            <select id="categoryFilter" class="search-input" style="cursor: pointer; min-width: 180px;">
+                <option value="">All Categories</option>
+                <option value="passport">Passport / ID</option>
+                <option value="financial">Financial (IBAN/Credit Card)</option>
+                <option value="contact">Contact (Phone/Email/Address)</option>
+                <option value="medical">Medical Record</option>
+                <option value="travel">Travel History</option>
+                <option value="other">Other</option>
+            </select>
 
             <button type="submit" class="action-btn" id="searchBtn">
                 🔍 Search
@@ -164,16 +175,13 @@
 <script>
 
 /* ---- Account Menu Toggle ---- */
-
-function toggleAccountMenu() {
-    const menu = document.getElementById("accountMenu");
-    menu.classList.toggle("show-menu");
-}
+// Now handled globally in dashboard.js
 
 /* ---- Search Logic ---- */
 
 const searchForm   = document.getElementById("searchForm");
 const searchInput  = document.getElementById("searchInput");
+const categoryFilter = document.getElementById("categoryFilter");
 const searchBtn    = document.getElementById("searchBtn");
 const resultsArea  = document.getElementById("search-results");
 const headerArea   = document.getElementById("results-header-area");
@@ -186,14 +194,21 @@ async function handleSearch(e) {
     e.preventDefault();
 
     const query = searchInput.value.trim();
-    if (!query) return;
+    const category = categoryFilter.value;
+    
+    // We can search even if query is empty but category is selected
+    if (!query && !category) return;
 
     // Show loading state
     headerArea.innerHTML = "";
     resultsArea.innerHTML = '<div class="loading-spinner"></div>';
 
     try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+        let apiUrl = `/api/search?q=${encodeURIComponent(query)}`;
+        if (category) {
+            apiUrl += `&type=${encodeURIComponent(category)}`;
+        }
+        const response = await fetch(apiUrl);
 
         if (!response.ok) {
             throw new Error(`Server responded with ${response.status}`);

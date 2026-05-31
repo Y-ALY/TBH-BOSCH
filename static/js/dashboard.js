@@ -28,6 +28,23 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // =============================================
+    // 1.5. ACCOUNT MENU TOGGLE
+    // =============================================
+    window.toggleAccountMenu = function() {
+        const menu = document.getElementById("accountMenu");
+        if (menu) menu.classList.toggle("show-menu");
+    };
+
+    document.addEventListener("click", function(event) {
+        const accountBtn = document.querySelector(".account-btn");
+        const accountMenu = document.getElementById("accountMenu");
+        
+        if (accountBtn && accountMenu && !accountBtn.contains(event.target) && !accountMenu.contains(event.target)) {
+            accountMenu.classList.remove("show-menu");
+        }
+    });
+
+    // =============================================
     // 2. SIDEBAR TOGGLE
     // =============================================
     const menuBtn = document.getElementById("menuToggle");

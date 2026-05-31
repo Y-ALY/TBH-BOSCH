@@ -180,9 +180,11 @@
         <button class="menu-btn theme-toggle" id="themeToggleBtn" onclick="window.toggleDarkMode()" title="Toggle Theme" type="button"></button>
         <div class="account">
         <button class="account-btn" onclick="toggleAccountMenu()">
-            <div class="avatar-small">EA</div>
+            <div class="avatar-small">
+                {% if user %}{{ user.first_name[0] }}{{ user.last_name[0] }}{% else %}EA{% endif %}
+            </div>
             <div class="account-info">
-                <strong>Eyad Adly</strong>
+                <strong>{% if user %}{{ user.first_name }} {{ user.last_name }}{% else %}Eyad Adly{% endif %}</strong>
                 <span>Employee</span>
             </div>
         </button>
@@ -242,6 +244,25 @@
         <p>Complete GDPR Data Profile for <strong id="hero-user-id">{{ employee_id }}</strong></p>
     </section>
 
+    <div id="controls-area" class="reveal" style="display: none; margin-bottom: 20px;">
+        <div class="glass-card search-container" style="padding: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+            <div style="flex-grow: 1; min-width: 250px;">
+                <input type="text" class="search-input" id="userSearchInput" placeholder="Search documents or findings..." autocomplete="off">
+            </div>
+            <div style="min-width: 200px;">
+                <select id="userCategoryFilter" class="search-input" style="cursor: pointer;">
+                    <option value="">All Categories</option>
+                    <option value="passport">Passport / ID</option>
+                    <option value="financial">Financial (IBAN/Credit Card)</option>
+                    <option value="contact">Contact (Phone/Email/Address)</option>
+                    <option value="medical">Medical Record</option>
+                    <option value="travel">Travel History</option>
+                    <option value="other">Other Personal Data</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
     <div id="content-area" class="reveal">
         <div class="loading-state">
             <div class="loading-spinner"></div>
@@ -255,23 +276,26 @@
 /* ---- UI Toggles ---- */
 
 
-function toggleAccountMenu() {
-    const menu = document.getElementById("accountMenu");
-    menu.classList.toggle("show-menu");
-}
+/* ---- Account Menu Toggle ---- */
+// Now handled globally in dashboard.js
 
 /* ---- Data Fetching and Rendering ---- */
 const employeeId = "{{ employee_id }}";
 const contentArea = document.getElementById("content-area");
+const controlsArea = document.getElementById("controls-area");
+const searchInput = document.getElementById("userSearchInput");
+const categoryFilter = document.getElementById("userCategoryFilter");
 
 let countdownInterval = null;
+let allUserData = null;
 
 async function loadUserProfile() {
     try {
         const response = await fetch(`/api/user-details/${encodeURIComponent(employeeId)}`);
         if (!response.ok) throw new Error("Failed to load data");
-        const data = await response.json();
-        renderProfile(data);
+        allUserData = await response.json();
+        controlsArea.style.display = "block";
+        renderProfile(allUserData);
     } catch (err) {
         contentArea.innerHTML = `
             <div class="glass-card error-state">
@@ -299,12 +323,61 @@ function getStatusClass(status) {
 }
 
 function renderProfile(data) {
-    if (!data.files || data.files.length === 0) {
+    const query = searchInput.value.toLowerCase().trim();
+    const category = categoryFilter.value.toLowerCase();
+
+    let filteredFiles = data.files || [];
+
+    if (query || category) {
+        filteredFiles = filteredFiles.filter(file => {
+            let matchesSearch = false;
+            let matchesCategory = false;
+
+            // Search matching
+            if (!query) {
+                matchesSearch = true;
+            } else {
+                if (file.file_name && file.file_name.toLowerCase().includes(query)) matchesSearch = true;
+                if (file.file_path && file.file_path.toLowerCase().includes(query)) matchesSearch = true;
+                
+                if (file.findings) {
+                    file.findings.forEach(f => {
+                        if (f.flagged_snippet && f.flagged_snippet.toLowerCase().includes(query)) matchesSearch = true;
+                        if (f.reasoning && f.reasoning.toLowerCase().includes(query)) matchesSearch = true;
+                        if (f.category && f.category.toLowerCase().includes(query)) matchesSearch = true;
+                    });
+                }
+            }
+
+            // Category matching
+            if (!category) {
+                matchesCategory = true;
+            } else if (file.findings && file.findings.length > 0) {
+                matchesCategory = file.findings.some(f => {
+                    const fCat = (f.category || "").toLowerCase();
+                    if (category === "passport" && (fCat.includes("passport") || fCat.includes("id "))) return true;
+                    if (category === "financial" && (fCat.includes("iban") || fCat.includes("credit") || fCat.includes("bank") || fCat.includes("tax"))) return true;
+                    if (category === "contact" && (fCat.includes("phone") || fCat.includes("email") || fCat.includes("address"))) return true;
+                    if (category === "medical" && fCat.includes("medical")) return true;
+                    if (category === "travel" && fCat.includes("travel")) return true;
+                    if (category === "other" && !fCat.includes("passport") && !fCat.includes("id ") && !fCat.includes("iban") && !fCat.includes("credit") && !fCat.includes("phone") && !fCat.includes("email") && !fCat.includes("address") && !fCat.includes("medical") && !fCat.includes("travel")) return true;
+                    return false;
+                });
+            } else if (category === "other" && (!file.findings || file.findings.length === 0)) {
+                 // optionally show clean files in "other" or hide them. We will hide them if a specific category is requested and they have no findings.
+                 matchesCategory = false;
+            }
+
+            return matchesSearch && matchesCategory;
+        });
+    }
+
+    if (!filteredFiles || filteredFiles.length === 0) {
         contentArea.innerHTML = `
             <div class="glass-card empty-state">
                 <div style="font-size: 50px; margin-bottom: 20px; opacity: 0.5;">📂</div>
                 <h3>No Data Found</h3>
-                <p>There are no files or records associated with this user.</p>
+                <p>No documents match your search or filter criteria.</p>
             </div>
         `;
         return;
@@ -312,12 +385,12 @@ function renderProfile(data) {
 
     let html = `
         <div class="section-header">
-            <h2>All User Files & Data</h2>
+            <h2>All User Files & Data (${filteredFiles.length})</h2>
         </div>
         <div class="user-data-grid">
     `;
 
-    data.files.forEach(file => {
+    filteredFiles.forEach(file => {
         const hasFindings = file.findings && file.findings.length > 0;
         const cardStyle = hasFindings ? "border: 1px solid rgba(234,0,22,0.25);" : "";
         const badgeHtml = hasFindings 
@@ -420,6 +493,14 @@ function escapeHtml(text) {
 }
 
 // Initialize
+searchInput.addEventListener("input", () => {
+    if (allUserData) renderProfile(allUserData);
+});
+
+categoryFilter.addEventListener("change", () => {
+    if (allUserData) renderProfile(allUserData);
+});
+
 loadUserProfile();
 
 </script>

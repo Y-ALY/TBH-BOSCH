@@ -114,28 +114,50 @@ def employee_dashboard(
 
 
 @app.get("/employee-directory")
-def employee_directory(request: Request):
+def employee_directory(
+    request: Request,
+    session_emp_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db)
+):
+    if not session_emp_id:
+        return RedirectResponse(url="/")
+    user = db.query(Employee).filter(Employee.employee_id == session_emp_id).first()
     return templates.TemplateResponse(
         request=request,
         name="employee_directory.html",
-        context={}
+        context={"user": user}
     )
 
 
 @app.get("/data-points")
-def data_points(request: Request):
+def data_points(
+    request: Request,
+    session_emp_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db)
+):
+    if not session_emp_id:
+        return RedirectResponse(url="/")
+    user = db.query(Employee).filter(Employee.employee_id == session_emp_id).first()
     return templates.TemplateResponse(
         request=request,
         name="data_points.html",
-        context={}
+        context={"user": user}
     )
 
 @app.get("/user-details/{employee_id}")
-def user_details(employee_id: str, request: Request):
+def user_details(
+    employee_id: str, 
+    request: Request,
+    session_emp_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db)
+):
+    if not session_emp_id:
+        return RedirectResponse(url="/")
+    user = db.query(Employee).filter(Employee.employee_id == session_emp_id).first()
     return templates.TemplateResponse(
         request=request,
         name="user_details.html",
-        context={"employee_id": employee_id}
+        context={"employee_id": employee_id, "user": user}
     )
 
 from sqlalchemy import func
@@ -452,8 +474,29 @@ def search_findings(
     for item in _search_db:
         if risk_level and item.get("risk_level", "") != risk_level:
             continue
-        if type and item.get("type", "") != type:
-            continue
+        
+        if type:
+            item_type = item.get("type", "").lower()
+            category_match = False
+            if type == "passport" and ("passport" in item_type or "id" in item_type):
+                category_match = True
+            elif type == "financial" and ("iban" in item_type or "credit" in item_type or "bank" in item_type or "tax" in item_type):
+                category_match = True
+            elif type == "contact" and ("phone" in item_type or "email" in item_type or "address" in item_type):
+                category_match = True
+            elif type == "medical" and "medical" in item_type:
+                category_match = True
+            elif type == "travel" and "travel" in item_type:
+                category_match = True
+            elif type == "other":
+                if not any(kw in item_type for kw in ["passport", "id", "iban", "credit", "bank", "tax", "phone", "email", "address", "medical", "travel"]):
+                    category_match = True
+            elif type == item_type:
+                category_match = True
+                
+            if not category_match:
+                continue
+
         if owner and item.get("assigned_owner", "") != owner:
             continue
         if resolved is not None and bool(item.get("owner_resolved", False)) != resolved:
@@ -462,7 +505,9 @@ def search_findings(
             val = item.get("value", "").lower()
             ctx = item.get("context", "").lower()
             fid = item.get("file_id", "").lower()
-            if q_lower not in val and q_lower not in ctx and q_lower not in fid:
+            # Also search inside type for the query
+            itype = item.get("type", "").lower()
+            if q_lower not in val and q_lower not in ctx and q_lower not in fid and q_lower not in itype:
                 continue
         filtered.append(item)
 

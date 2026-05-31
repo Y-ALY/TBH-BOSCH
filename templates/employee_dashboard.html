@@ -297,21 +297,7 @@
 
 <script>
 
-// --- Account Menu Toggle ---
-function toggleAccountMenu() {
-    const menu = document.getElementById("accountMenu");
-    menu.classList.toggle("show-menu");
-}
-
-// Close the menu if the user clicks anywhere else on the screen
-document.addEventListener("click", function(event) {
-    const accountBtn = document.querySelector(".account-btn");
-    const accountMenu = document.getElementById("accountMenu");
-    
-    if (!accountBtn.contains(event.target) && !accountMenu.contains(event.target)) {
-        accountMenu.classList.remove("show-menu");
-    }
-});
+// Global toggleAccountMenu and click-outside handler are now in dashboard.js
 
 // --- NEW WIRING CODE ---
 // When the page loads, fetch the real data from the Python API

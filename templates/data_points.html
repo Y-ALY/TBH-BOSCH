@@ -159,10 +159,12 @@
         <div class="topbar-right" style="display: flex; align-items: center; gap: 14px;">
             <button class="menu-btn theme-toggle" id="themeToggleBtn" onclick="window.toggleDarkMode()" title="Toggle Theme" type="button"></button>
             <div class="account">
-                <button class="account-btn">
-                    <div class="avatar-small">EA</div>
+                <button class="account-btn" onclick="toggleAccountMenu()">
+                    <div class="avatar-small">
+                        {% if user %}{{ user.first_name[0] }}{{ user.last_name[0] }}{% else %}EA{% endif %}
+                    </div>
                     <div class="account-info">
-                        <strong>Eyad Adly</strong>
+                        <strong>{% if user %}{{ user.first_name }} {{ user.last_name }}{% else %}Eyad Adly{% endif %}</strong>
                         <span>Employee</span>
                     </div>
                 </button>
