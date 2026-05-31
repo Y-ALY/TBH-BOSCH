@@ -2,15 +2,15 @@
 
 > Owned by Agent 0 (Coordinator). Tracks progress of all agents in Phase 1.
 
-## Baseline (2026-06-01)
+## Phase 1 Complete (2026-06-01)
 
 ### Git
-- Branch: `major-restructure` (pushed to origin)
-- Working tree: clean (only MULTI_AGENT_REFACTOR_PLAN.md untracked)
+- Branch: `major-restructure` (pushed to origin, worktree `refactor-coordinator`)
+- Commits: 9 incremental commits covering all agent work
 
-### Test Suite (post-Agent-2)
-- **283 passed**, **3 failed** (pre-existing, categorized), **2 skipped**, 6 warnings
-- 71 new tests added (288 total vs 217 original)
+### Final Test Suite
+- **294 passed**, **3 failed** (pre-existing, categorized), **2 skipped**, 8 warnings
+- 73 new tests added (299 total vs 226 original)
 - Failures (all in `tests/test_classifier.py` — see Agent 2 section for categorization):
   1. `test_classifier_matches_regex_scanner_contextual_pii` — test expectation needs update
   2. `test_classifier_semantic_phone_still_detects_contextual_phone` — test expectation needs update
@@ -37,30 +37,25 @@ See Agent 7 for full classification. Notable:
 
 ## Agent Status
 
-| Agent | Status | Files Changed | Tests | Notes |
-|-------|--------|---------------|-------|-------|
-| 0 - Coordinator | in_progress | - | baseline recorded | - |
-| 1 - Architecture Map | pending | - | - | - |
-| 2 - Test Baseline | completed | conftest.py, test_core_scan_chain.py, test_api_smoke.py, pyproject.toml | 283 passed, 3 failed (pre-existing), 2 skipped | New shared fixtures, core scan chain coverage, API smoke tests | - |
-| 3 - API Boundary | pending | - | - | - |
-| 4 - Scan Engine | pending | - | - | - |
-| 5 - DB Hardening | pending | - | - | - |
-| 6 - Production Readiness | pending | - | - | - |
-| 7 - Repo Hygiene | pending | - | - | - |
-| 8 - UI Route Stabilization | pending | - | - | - |
+| Agent | Status | Key Deliverables |
+|-------|--------|------------------|
+| 0 - Coordinator | ✅ complete | Baseline, plan, final integration |
+| 1 - Architecture Map | ✅ complete | `docs/architecture-map.md` (568 lines) |
+| 2 - Test Baseline | ✅ complete | conftest.py, 73 new tests, pyproject.toml |
+| 3 - API Boundary | ✅ complete | `app/routes/scan.py`, `app/startup.py` |
+| 4 - Scan Engine | ✅ complete | `src/scan_service.py`, entry point docs |
+| 5 - DB Hardening | ✅ complete | Sectioned database.py, 15 DB writer tests |
+| 6 - Production Readiness | ✅ complete | `docs/production-readiness.md` (453 lines) |
+| 7 - Repo Hygiene | ✅ complete | `docs/root-cleanup-proposal.md`, `.gitignore` |
+| 8 - UI Route Stabilization | ✅ complete | `docs/ui-route-map.md`, smoke checklist |
+| 15 - Deployment | ✅ complete | `render.yaml`, PostgreSQL, seed script, runbook |
 
-## Execution Order
+## Execution Summary
 
-1. ✅ Agent 0: baseline recorded
-2. ⏳ Agent 1: architecture map
-3. Agent 2: test baseline and safety net
-4. Agent 6: production-readiness audit
-5. Agent 7: repo hygiene proposal
-6. Agent 4: scan engine consolidation
-7. Agent 5: DB hardening
-8. Agent 3: API boundary cleanup
-9. Agent 8: UI smoke validation
-10. Agent 0: final integration pass
+```
+✅ 0 → ✅ 1 → ✅ 2 → ✅ 6 → ✅ 7 → ✅ 15
+→ ✅ 4 → ✅ 5 → ✅ 3 → ✅ 8 → ✅ 0 final
+```
 
 ---
 
