@@ -334,7 +334,7 @@ def get_user_details(employee_id: str, db: Session = Depends(get_db)):
                 "flagged_snippet": getattr(f, "flagged_snippet", None) or getattr(f, "value", ""),
                 "reasoning": getattr(f, "reasoning", None) or getattr(f, "context", ""),
                 "risk_level": getattr(f, "risk_level", "low"),
-                "status": getattr(f, "status", "Pending"),
+                "status": getattr(f, "review_status", None) or getattr(f, "status", "pending_review"),
                 "confidence_score": getattr(f, "confidence", 0.95)
             })
             
@@ -526,7 +526,7 @@ def get_employee_files(employee_id: str, db: Session = Depends(get_db)):
     # 2. Find all active GDPR flags for those specific files
     user_findings = db.query(Finding).filter(
         Finding.file_id.in_(user_file_ids),
-        Finding.status == "Pending"  # Only show unresolved issues
+        Finding.review_status == "pending_review"  # Only show unresolved issues
     ).all()
     
     # 3. Format the response for the frontend
@@ -579,7 +579,8 @@ def process_employee_action(request: ActionRequest, db: Session = Depends(get_db
         finding = db.query(Finding).filter(Finding.finding_uid == str(request.file_id)).first()
         
     if finding:
-        finding.status = "Completed - Deleted"
+        finding.status = "deleted"
+        finding.review_status = "deleted"
         finding.owner_resolved = True
         db.commit()
         return {"status": "success", "message": f"Processed {request.action} on finding {request.file_id}"}
@@ -641,9 +642,10 @@ def delete_expired_file(
         # Update associated Findings
         findings = db.query(Finding).filter(Finding.file_id == file_id).all()
         for finding in findings:
-            finding.status = "Completed - Deleted"
+            finding.status = "deleted"
+            finding.review_status = "deleted"
             finding.owner_resolved = True
-            
+
         # Update FileMetadata
         file_meta.file_path = f"[DELETED] {file_path}"
         
@@ -829,12 +831,15 @@ def trigger_manual_scan(
             owner_department=f.owner_department,
             owner_resolved=f.owner_resolved,
             escalation_target=f.escalation_target,
+            is_flagged=f.is_flagged,
+            flag_type=f.flag_type,
             # Legacy columns
             category=f.type,
             confidence_score=f.confidence,
             flagged_snippet=f.value,
             reasoning=f.context,
-            status="Pending",
+            status="pending_review",
+            review_status="pending_review",
         )
         db.add(row)
     db.commit()
@@ -931,7 +936,8 @@ def seed_dummy_data(db: Session = Depends(get_db)):
         confidence_score=0.98,
         flagged_snippet="L9923481X",
         reasoning="Found standard passport format in onboarding doc.",
-        status="Pending"
+        status="pending_review",
+        review_status="pending_review",
     )
     db.add(dummy_finding)
     db.commit()
@@ -988,7 +994,7 @@ def search_findings(
             "value": row.value or row.flagged_snippet or "",
             "context": row.context or "unknown",
             "risk_level": row.risk_level or "medium",
-            "status": row.status or "Pending",
+            "status": row.review_status or row.status or "pending_review",
             "assigned_owner": row.assigned_owner or "",
             "owner_resolved": row.owner_resolved or False,
         }

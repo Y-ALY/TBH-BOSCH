@@ -193,8 +193,10 @@ class FindingOut(BaseModel):
     owner_department: str = ""
     owner_resolved: bool = False
     escalation_target: str = ""
+    is_flagged: bool = True
+    flag_type: str = ""
     # Review state (added by the API layer)
-    review_status: str = "pending"
+    review_status: str = "pending_review"
     review_action: Optional[str] = None
     reviewer: Optional[str] = None
     reviewed_at: Optional[str] = None
@@ -378,6 +380,8 @@ def _persist_finding(db: Session, f: FindingDC) -> FindingORM:
         existing.owner_department = f.owner_department
         existing.owner_resolved = f.owner_resolved
         existing.escalation_target = f.escalation_target
+        existing.is_flagged = f.is_flagged
+        existing.flag_type = f.flag_type
         # Also mirror into the legacy columns for compatibility
         existing.category = f.type
         existing.confidence_score = f.confidence
@@ -408,12 +412,15 @@ def _persist_finding(db: Session, f: FindingDC) -> FindingORM:
         owner_department=f.owner_department,
         owner_resolved=f.owner_resolved,
         escalation_target=f.escalation_target,
+        is_flagged=f.is_flagged,
+        flag_type=f.flag_type,
         # Legacy columns (used by admin KPIs in main.py)
         category=f.type,
         confidence_score=f.confidence,
         flagged_snippet=f.value,
         reasoning=f.context,
-        status="Pending",
+        status="pending_review",
+        review_status="pending_review",
     )
     db.add(row)
     return row
@@ -714,7 +721,7 @@ async def list_findings(
     ),
     review_status: Optional[str] = Query(
         default=None,
-        description="Filter by review status: pending | completed.",
+        description="Filter by review status: pending_review | retained | deleted | archived | masked | false_positive | escalated.",
     ),
     skip: int = Query(default=0, ge=0, description="Pagination offset."),
     limit: int = Query(default=50, ge=1, le=500, description="Page size."),
@@ -774,7 +781,9 @@ async def list_findings(
             owner_department=row.owner_department or "",
             owner_resolved=row.owner_resolved or False,
             escalation_target=row.escalation_target or "",
-            review_status=row.review_status or "pending",
+            is_flagged=bool(row.is_flagged) if row.is_flagged is not None else True,
+            flag_type=row.flag_type or "",
+            review_status=row.review_status or "pending_review",
             review_action=row.review_action,
             reviewer=row.reviewer,
             reviewed_at=row.reviewed_at,
@@ -829,11 +838,23 @@ async def review_finding(finding_id: str, req: ReviewRequest, db: Session = Depe
 
     # ── Apply review ─────────────────────────────────────────────────────────
     now = datetime.now().isoformat()
-    finding.review_status = "completed"
     finding.review_action = req.action
     finding.reviewer = req.reviewer
     finding.reviewed_at = now
     finding.recommended_action = req.action
+
+    # Map action to lifecycle status (shared by status + review_status)
+    _action_status_map = {
+        "retain": "retained",
+        "delete": "deleted",
+        "archive": "archived",
+        "mask": "masked",
+        "false_positive": "false_positive",
+        "escalate_dpo": "escalated",
+    }
+    new_state = _action_status_map.get(req.action, req.action)
+    finding.status = new_state
+    finding.review_status = new_state
 
     # ── Handle actual file deletion / archival ───────────────────────────────
     if req.action == "delete":
@@ -884,7 +905,6 @@ async def review_finding(finding_id: str, req: ReviewRequest, db: Session = Depe
             logger.info("No file path for finding %s — marking status only", finding_id)
 
         # 3) Update the finding + all sibling findings for the same file
-        finding.status = "Completed - Deleted"
         finding.owner_resolved = True
 
         # Resolve siblings (other findings pointing to the same file)
@@ -901,8 +921,8 @@ async def review_finding(finding_id: str, req: ReviewRequest, db: Session = Depe
                 FindingORM.id != finding.id,
             ).all()
             for sib in siblings:
-                sib.status = "Completed - Deleted"
-                sib.review_status = "completed"
+                sib.status = "deleted"
+                sib.review_status = "deleted"
                 sib.review_action = "delete"
                 sib.reviewer = req.reviewer
                 sib.reviewed_at = now
@@ -917,9 +937,6 @@ async def review_finding(finding_id: str, req: ReviewRequest, db: Session = Depe
                 file_rec.file_path = f"[ARCHIVED] {file_rec.file_path}"
 
         logger.info("Delete action complete for finding %s: %s", finding_id, deletion_note)
-    else:
-        # Non-delete actions — just update the legacy status column
-        finding.status = req.action.capitalize()
 
     db.commit()
 

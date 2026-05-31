@@ -44,7 +44,7 @@ class Finding(Base):
     confidence_score = Column(Float)
     flagged_snippet = Column(String)
     reasoning = Column(String)
-    status = Column(String, default="Pending") # Options: Pending, Deleted, False_Positive
+    status = Column(String, default="pending_review")  # lifecycle: pending_review | retained | deleted | archived | masked | false_positive | escalated
 
     # ── Extended fields from the scan pipeline ─────────────────────────
     finding_uid = Column(String, unique=True, index=True)  # pipeline finding_id (str)
@@ -62,9 +62,11 @@ class Finding(Base):
     owner_department = Column(String, default="")
     owner_resolved = Column(Boolean, default=False)
     escalation_target = Column(String, default="")
+    is_flagged = Column(Boolean, default=True)
+    flag_type = Column(String, default="")
 
     # Review state (managed by the API layer)
-    review_status = Column(String, default="pending")       # pending | completed
+    review_status = Column(String, default="pending_review")  # mirrors status above; pending_review | retained | deleted | archived | masked | false_positive | escalated
     review_action = Column(String, nullable=True)
     reviewer = Column(String, nullable=True)
     reviewed_at = Column(String, nullable=True)

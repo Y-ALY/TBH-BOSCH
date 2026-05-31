@@ -218,12 +218,14 @@ class BulkWriter:
             "owner_department": f.owner_department,
             "owner_resolved": f.owner_resolved,
             "escalation_target": f.escalation_target,
+            "is_flagged": f.is_flagged,
+            "flag_type": f.flag_type,
             "category": f.type,
             "confidence_score": f.confidence,
             "flagged_snippet": f.value,
             "reasoning": f.context,
-            "status": "Pending",
-            "review_status": "pending",
+            "status": "pending_review",
+            "review_status": "pending_review",
         }
 
     @staticmethod
@@ -242,6 +244,8 @@ class BulkWriter:
         orm_row.owner_department = f.owner_department
         orm_row.owner_resolved = f.owner_resolved
         orm_row.escalation_target = f.escalation_target
+        orm_row.is_flagged = f.is_flagged
+        orm_row.flag_type = f.flag_type
         orm_row.category = f.type
         orm_row.confidence_score = f.confidence
         orm_row.flagged_snippet = f.value

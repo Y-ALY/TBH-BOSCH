@@ -90,7 +90,8 @@ def seed_data():
                     confidence_score=0.99,
                     flagged_snippet=f"[{pii_type} Match found in {doc['file_name']}]",
                     reasoning="Detected via Workflow JSON Rules",
-                    status="Pending"
+                    status="pending_review",
+                    review_status="pending_review",
                 )
                 db.add(finding)
             db.commit()
