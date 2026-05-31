@@ -70,6 +70,36 @@ class Finding(Base):
     reviewed_at = Column(String, nullable=True)
 
 
+class ScanJob(Base):
+    __tablename__ = "scan_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    scan_id = Column(String, unique=True, index=True)
+    status = Column(String, default="pending")  # pending|running|completed|failed|interrupted
+    options_json = Column(String, default="{}")  # JSON-serialized ScanOptions
+    metrics_json = Column(String, default="{}")  # JSON-serialized ScanMetrics
+    created_at = Column(String)
+    started_at = Column(String, nullable=True)
+    completed_at = Column(String, nullable=True)
+    total_files = Column(Integer, default=0)
+    files_scanned = Column(Integer, default=0)
+    files_skipped = Column(Integer, default=0)
+    files_error = Column(Integer, default=0)
+    total_findings = Column(Integer, default=0)
+    error_message = Column(String, nullable=True)
+
+
+class ScanError(Base):
+    __tablename__ = "scan_errors"
+
+    id = Column(Integer, primary_key=True, index=True)
+    scan_id = Column(String, index=True)
+    file_id = Column(String)
+    file_name = Column(String)
+    error_type = Column(String)
+    message = Column(String)
+
+
 # ── Reusable DB session dependency ────────────────────────────────────────────
 def get_db():
     """Yield a SQLAlchemy session; auto-closes when the request ends."""
