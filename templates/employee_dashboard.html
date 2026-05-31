@@ -536,6 +536,7 @@ async function loadOverviewStats() {
         let expiringSoon = 0;
         let deleteCandidates = 0;
         let flaggedFiles = 0;
+        const expiredFiles = [];
 
         files.forEach(file => {
             // 1. Calculate Date Math safely
@@ -544,6 +545,7 @@ async function loadOverviewStats() {
                 if (!isNaN(deadline)) {
                     if (deadline < now) {
                         deleteCandidates++;
+                        expiredFiles.push(file);
                     } else if (deadline >= now && deadline <= thirtyDaysFromNow) {
                         expiringSoon++;
                     }
@@ -562,6 +564,10 @@ async function loadOverviewStats() {
         document.getElementById("stat-flagged").textContent = flaggedFiles;
         const profileCompliance = document.getElementById("profile-compliance");
         if (profileCompliance) profileCompliance.textContent = complianceScore + "%";
+
+        if (deleteCandidates > 0 && typeof triggerGdprModal === 'function') {
+            triggerGdprModal(employeeId, expiredFiles);
+        }
 
     } catch (error) {
         console.error("Data Overview Error:", error);
@@ -699,6 +705,8 @@ async function markNotifRead(notifId, el) {
 
 </script>
 <script src="/static/js/dashboard.js?v=6"></script>
+
+{% include 'gdpr_modal_snippet.html' %}
 
 </body>
 </html>

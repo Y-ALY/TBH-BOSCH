@@ -53,10 +53,16 @@ def assign_owners(
 
     # ── Tier 0: static hints override everything (backward compat) ───────
     if hints.get("name") and hints.get("email"):
+        emp_id = ""
+        if db_session is not None:
+            employee = _query_employee_by_email(db_session, hints["email"])
+            if employee:
+                emp_id = employee.employee_id
         _apply(findings,
                name=hints["name"],
                email=hints["email"],
                department=hints.get("department", ""),
+               employee_id=emp_id,
                resolved=True)
         return
 
@@ -183,16 +189,24 @@ def _resolve_from_fields(fields: dict[str, str], db_session) -> Optional[dict]:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Database query helpers (import Employee lazily to avoid circular imports)
+# Database query helpers with caching to prevent N+1 queries
 # ═════════════════════════════════════════════════════════════════════════════
+
+_emp_id_cache = {}
+_emp_email_cache = {}
+_emp_name_cache = {}
 
 def _query_employee_by_id(db_session, emp_id: str):
     """Look up an employee by their employee_id column."""
+    if emp_id in _emp_id_cache:
+        return _emp_id_cache[emp_id]
     try:
         from database import Employee
-        return db_session.query(Employee).filter(
+        employee = db_session.query(Employee).filter(
             Employee.employee_id == emp_id
         ).first()
+        _emp_id_cache[emp_id] = employee
+        return employee
     except Exception as exc:
         logger.debug("Employee lookup by ID failed: %s", exc)
         return None
@@ -200,11 +214,15 @@ def _query_employee_by_id(db_session, emp_id: str):
 
 def _query_employee_by_email(db_session, email: str):
     """Look up an employee by their email column."""
+    if email in _emp_email_cache:
+        return _emp_email_cache[email]
     try:
         from database import Employee
-        return db_session.query(Employee).filter(
+        employee = db_session.query(Employee).filter(
             Employee.email == email
         ).first()
+        _emp_email_cache[email] = employee
+        return employee
     except Exception as exc:
         logger.debug("Employee lookup by email failed: %s", exc)
         return None
@@ -212,6 +230,8 @@ def _query_employee_by_email(db_session, email: str):
 
 def _query_employee_by_name(db_session, name: str):
     """Fuzzy-match: try 'first last' against Employee.first_name + last_name."""
+    if name in _emp_name_cache:
+        return _emp_name_cache[name]
     try:
         from database import Employee
         parts = name.split()
@@ -222,6 +242,7 @@ def _query_employee_by_name(db_session, name: str):
                 Employee.last_name.ilike(last),
             ).first()
             if result:
+                _emp_name_cache[name] = result
                 return result
 
         # Fallback: check if any part of the name matches first or last name
@@ -232,9 +253,11 @@ def _query_employee_by_name(db_session, name: str):
                 Employee.first_name.ilike(part) | Employee.last_name.ilike(part)
             ).first()
             if result:
+                _emp_name_cache[name] = result
                 return result
     except Exception as exc:
         logger.debug("Employee lookup by name failed: %s", exc)
+    _emp_name_cache[name] = None
     return None
 
 

@@ -306,6 +306,30 @@ def user_details(
 ):
     if not session_emp_id:
         return RedirectResponse(url="/")
+    
+    # Resolve name or email to proper BX-XXXXX ID
+    resolved_emp = None
+    if employee_id:
+        if "@" in employee_id:
+            resolved_emp = db.query(Employee).filter(Employee.email == employee_id).first()
+        elif not employee_id.startswith("BX-"):
+            parts = employee_id.strip().split(" ", 1)
+            if len(parts) == 2:
+                resolved_emp = db.query(Employee).filter(
+                    Employee.first_name.ilike(parts[0]),
+                    Employee.last_name.ilike(parts[1])
+                ).first()
+            if not resolved_emp:
+                resolved_emp = db.query(Employee).filter(
+                    (Employee.first_name.ilike(employee_id)) |
+                    (Employee.last_name.ilike(employee_id))
+                ).first()
+        else:
+            resolved_emp = db.query(Employee).filter(Employee.employee_id == employee_id).first()
+
+    if resolved_emp:
+        employee_id = resolved_emp.employee_id
+
     user = db.query(Employee).filter(Employee.employee_id == session_emp_id).first()
     return templates.TemplateResponse(
         request=request,
@@ -320,6 +344,29 @@ from sqlalchemy import func
 
 @app.get("/api/user-details/{employee_id}")
 def get_user_details(employee_id: str, db: Session = Depends(get_db)):
+    # Resolve name or email to proper BX-XXXXX ID
+    resolved_emp = None
+    if employee_id:
+        if "@" in employee_id:
+            resolved_emp = db.query(Employee).filter(Employee.email == employee_id).first()
+        elif not employee_id.startswith("BX-"):
+            parts = employee_id.strip().split(" ", 1)
+            if len(parts) == 2:
+                resolved_emp = db.query(Employee).filter(
+                    Employee.first_name.ilike(parts[0]),
+                    Employee.last_name.ilike(parts[1])
+                ).first()
+            if not resolved_emp:
+                resolved_emp = db.query(Employee).filter(
+                    (Employee.first_name.ilike(employee_id)) |
+                    (Employee.last_name.ilike(employee_id))
+                ).first()
+        else:
+            resolved_emp = db.query(Employee).filter(Employee.employee_id == employee_id).first()
+
+    if resolved_emp:
+        employee_id = resolved_emp.employee_id
+
     user_files = db.query(FileMetadata).filter(FileMetadata.owner_employee_id == employee_id).all()
     file_results = []
     
@@ -438,27 +485,57 @@ def search_employees(q: str, db: Session = Depends(get_db)):
         return []
     
     q_lower = f"%{q.lower()}%"
-    from sqlalchemy import or_, func
+    from sqlalchemy import or_, func, desc
     
-    employees = db.query(Employee).filter(
-        or_(
-            func.lower(Employee.first_name).like(q_lower),
-            func.lower(Employee.last_name).like(q_lower),
-            func.lower(Employee.email).like(q_lower),
-            func.lower(Employee.employee_id).like(q_lower),
-            func.lower(Employee.first_name + " " + Employee.last_name).like(q_lower)
+    # Query employees with LEFT JOIN to files to get file counts.
+    # Sort by file_count DESC so employees who actually own files
+    # appear first in the search results — this is the key UX fix
+    # that prevents zero-file employees from crowding out results.
+    results_raw = (
+        db.query(
+            Employee,
+            func.count(FileMetadata.id).label("file_count"),
         )
-    ).limit(50).all()
+        .outerjoin(FileMetadata, FileMetadata.owner_employee_id == Employee.employee_id)
+        .filter(
+            or_(
+                func.lower(Employee.first_name).like(q_lower),
+                func.lower(Employee.last_name).like(q_lower),
+                func.lower(Employee.email).like(q_lower),
+                func.lower(Employee.employee_id).like(q_lower),
+                func.lower(Employee.first_name + " " + Employee.last_name).like(q_lower),
+            )
+        )
+        .group_by(Employee.id)
+        .order_by(desc("file_count"), Employee.last_name)
+        .limit(50)
+        .all()
+    )
     
     results = []
-    for emp in employees:
+    for emp, file_count in results_raw:
+        # Count findings across this employee's files
+        findings_count = 0
+        if file_count > 0:
+            emp_file_ids = [
+                f.id for f in db.query(FileMetadata.id)
+                .filter(FileMetadata.owner_employee_id == emp.employee_id)
+                .all()
+            ]
+            if emp_file_ids:
+                findings_count = db.query(Finding).filter(
+                    Finding.file_id.in_(emp_file_ids)
+                ).count()
+
         results.append({
             "employee_id": emp.employee_id,
             "first_name": emp.first_name,
             "last_name": emp.last_name,
             "email": emp.email,
             "department": emp.department,
-            "location": emp.location
+            "location": emp.location,
+            "file_count": file_count,
+            "findings_count": findings_count,
         })
     return results
 
@@ -516,6 +593,29 @@ class ActionRequest(BaseModel):
 def get_employee_files(employee_id: str, db: Session = Depends(get_db)):
     from datetime import datetime
     
+    # Resolve name or email to proper BX-XXXXX ID
+    resolved_emp = None
+    if employee_id:
+        if "@" in employee_id:
+            resolved_emp = db.query(Employee).filter(Employee.email == employee_id).first()
+        elif not employee_id.startswith("BX-"):
+            parts = employee_id.strip().split(" ", 1)
+            if len(parts) == 2:
+                resolved_emp = db.query(Employee).filter(
+                    Employee.first_name.ilike(parts[0]),
+                    Employee.last_name.ilike(parts[1])
+                ).first()
+            if not resolved_emp:
+                resolved_emp = db.query(Employee).filter(
+                    (Employee.first_name.ilike(employee_id)) |
+                    (Employee.last_name.ilike(employee_id))
+                ).first()
+        else:
+            resolved_emp = db.query(Employee).filter(Employee.employee_id == employee_id).first()
+
+    if resolved_emp:
+        employee_id = resolved_emp.employee_id
+
     # 1. Find all files owned by this specific employee
     user_files = db.query(FileMetadata).filter(FileMetadata.owner_employee_id == employee_id).all()
     user_file_ids = [f.id for f in user_files]
@@ -524,9 +624,17 @@ def get_employee_files(employee_id: str, db: Session = Depends(get_db)):
         return {"message": "No files found for this user.", "findings": []}
 
     # 2. Find all active GDPR flags for those specific files
+    #    Accept both 'pending_review' and 'pending' since the DB may use either
+    #    value depending on which ingestion path created the findings.
+    from sqlalchemy import or_
     user_findings = db.query(Finding).filter(
         Finding.file_id.in_(user_file_ids),
-        Finding.review_status == "pending_review"  # Only show unresolved issues
+        or_(
+            Finding.review_status == "pending_review",
+            Finding.review_status == "pending",
+            Finding.status == "Pending",
+            Finding.status == "pending_review",
+        )
     ).all()
     
     # 3. Format the response for the frontend
@@ -553,9 +661,13 @@ def get_employee_files(employee_id: str, db: Session = Depends(get_db)):
             "finding_id": finding.id,
             "file_id": file_record.id,
             "file_name": file_record.file_path.split("\\")[-1] if "\\" in file_record.file_path else file_record.file_path.split("/")[-1],
+            "file_path": file_record.file_path,
             "category": finding.category,
             "flagged_snippet": finding.flagged_snippet, # UNMASKED: The employee is allowed to see their own data
+            "match_context": finding.reasoning or finding.context or "",  # Context around the match for frontend display
             "reasoning": finding.reasoning,
+            "risk_level": finding.risk_level or "medium",
+            "recommended_action": finding.recommended_action or "review",
             "expired": is_expired,
             "urgency": "IMMEDIATE DELETION REQUIRED" if is_expired else "Action Required"
         })
@@ -767,11 +879,12 @@ def trigger_manual_scan(
     save_state(scan_result, str(state_dir))
 
     # ── Determine which findings are "new" ───────────────────────────────
-    if delta_report is not None:
+    db_findings_count = db.query(Finding).count()
+    if delta_report is not None and db_findings_count > 0:
         changed_ids = added_ids | modified_ids
         new_findings = [f for f in scan_result.findings if f.file_id in changed_ids]
     else:
-        # First scan ever — everything is new
+        # First scan ever or DB wiped — everything is new
         new_findings = scan_result.findings
         added_ids = {f.file_id for f in connector.list_files()}
 
@@ -803,16 +916,25 @@ def trigger_manual_scan(
             db.delete(db_file)
     db.commit()
 
-    # ── Persist new findings to the DB ───────────────────────────────────
+    # ── Persist new findings to the DB (Optimized with Caching and Bulk Save) ─────────────────
+    # 1. Cache all existing Finding UIDs to prevent duplicate checks
+    existing_finding_uids = {f[0] for f in db.query(Finding.finding_uid).all() if f[0]}
+    
+    # 2. Cache all FileMetadata IDs by filename to prevent repeated file ID queries
+    all_metas = db.query(FileMetadata.id, FileMetadata.file_path).all()
+    meta_id_by_filename = {}
+    for meta_id, file_path in all_metas:
+        if file_path:
+            filename = file_path.split("/")[-1].split("\\")[-1]
+            meta_id_by_filename[filename] = meta_id
+
+    new_finding_rows = []
     for f in new_findings:
-        existing = db.query(Finding).filter(Finding.finding_uid == f.finding_id).first()
-        if existing:
+        if f.finding_id in existing_finding_uids:
             continue  # skip duplicates
             
-        # Get the actual file ID from the FileMetadata table
         filename = f.file_id.replace("local:", "")
-        file_meta = db.query(FileMetadata).filter(FileMetadata.file_path.like(f"%{filename}")).first()
-        actual_file_id = file_meta.id if file_meta else None
+        actual_file_id = meta_id_by_filename.get(filename)
             
         row = Finding(
             finding_uid=f.finding_id,
@@ -841,8 +963,11 @@ def trigger_manual_scan(
             status="pending_review",
             review_status="pending_review",
         )
-        db.add(row)
-    db.commit()
+        new_finding_rows.append(row)
+        
+    if new_finding_rows:
+        db.bulk_save_objects(new_finding_rows)
+        db.commit()
 
     # ── Build categorised file lists for the response ────────────────────
     all_file_ids = {f.file_id for f in connector.list_files()}
@@ -896,6 +1021,143 @@ def trigger_manual_scan(
     }
 
 
+# ── Memory-Safe Extraction Pipeline (New) ────────────────────────────────────
+# This endpoint uses the new src/extractor.py module which:
+#   1. Reads files via generators (O(page) memory for PDFs)
+#   2. Uses pre-compiled regex (O(1) compilation cost)
+#   3. Returns a strict JSON contract for Admin + User views
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Cache the latest extraction result in-process to avoid re-scanning
+# for dashboard refreshes.  This is intentionally a module-level dict,
+# not a DB table, so it resets on server restart.
+_latest_extraction_result: dict = {}
+
+
+class TriggerExtractionRequest(PydanticBaseModel):
+    """Body for POST /api/admin/trigger-extraction."""
+    target_dir: str = "./demo_drive_rich"
+
+
+@app.post("/api/admin/trigger-extraction")
+def trigger_extraction(
+    req: TriggerExtractionRequest = TriggerExtractionRequest(),
+    db: Session = Depends(get_db),
+):
+    """Run the memory-safe extraction pipeline on a target directory.
+
+    This endpoint:
+      1. Loads owner_hints.json for file→owner mapping.
+      2. Calls scan_directory() which processes files ONE AT A TIME
+         using generator-based chunked reading (constant memory).
+      3. Persists new findings to the SQLite database.
+      4. Returns the strict JSON contract:
+         - admin_aggregates: totals for the dashboard KPI blocks.
+         - user_file_details: per-file owner + findings + context.
+
+    The scan handles unlimited data — a 5 TB drive uses the same
+    RAM as a 5 MB folder because files are never fully loaded.
+    """
+    global _latest_extraction_result
+    from pathlib import Path as _Path
+    from src.extractor import scan_directory
+    import json
+
+    target_dir = req.target_dir
+    if not _Path(target_dir).exists():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Directory not found: {target_dir}")
+
+    # Load owner hints
+    hints_path = _Path(target_dir) / "owner_hints.json"
+    owner_hints = {}
+    if hints_path.exists():
+        with open(hints_path, "r", encoding="utf-8") as f:
+            owner_hints = json.load(f)
+
+    # ── Run the extraction pipeline (memory-safe, generator-based) ──
+    result = scan_directory(str(target_dir), owner_hints=owner_hints)
+
+    # ── Persist findings to the DB for the employee dashboard ──
+    from datetime import datetime, timedelta
+    import hashlib
+
+    # Cache all existing finding values to prevent duplicates
+    existing_values = {
+        f[0] for f in db.query(Finding.flagged_snippet).all() if f[0]
+    }
+
+    # Cache existing file paths for FileMetadata lookup
+    all_metas = db.query(database.FileMetadata.id, database.FileMetadata.file_path).all()
+    meta_id_by_path = {fp: mid for mid, fp in all_metas}
+
+    new_findings_added = 0
+    for file_detail in result.get("user_file_details", []):
+        file_path = file_detail["file_path"]
+        file_id = meta_id_by_path.get(file_path)
+
+        for finding in file_detail.get("findings", []):
+            matched_val = finding["matched_value"]
+            if matched_val in existing_values:
+                continue
+            existing_values.add(matched_val)
+
+            row = Finding(
+                file_id=file_id,
+                category=finding["category"],
+                confidence_score=finding["confidence"],
+                flagged_snippet=matched_val,
+                reasoning=finding["match_context"],
+                status="pending_review",
+                review_status="pending_review",
+                # Extended fields
+                type=finding["category"],
+                value=matched_val,
+                context=finding["match_context"],
+                risk_level=finding["risk_level"],
+                confidence=finding["confidence"],
+                recommended_action=finding["recommended_action"],
+                assigned_owner=file_detail.get("owner", ""),
+                owner_email=file_detail.get("owner_email", ""),
+                is_flagged=True,
+                flag_type="Extractor_Regex",
+            )
+            db.add(row)
+            new_findings_added += 1
+
+    if new_findings_added:
+        db.commit()
+
+    # Cache result for the GET endpoint
+    _latest_extraction_result = result
+
+    # Add DB persistence stats to the response
+    result["db_findings_added"] = new_findings_added
+
+    return result
+
+
+@app.get("/api/admin/extraction-results")
+def get_extraction_results():
+    """Return the latest cached extraction results without re-scanning.
+
+    Use this for dashboard refreshes — it's instant because it reads
+    from the in-process cache rather than re-scanning the filesystem.
+    """
+    if not _latest_extraction_result:
+        return {
+            "admin_aggregates": {
+                "total_scanned_files": 0,
+                "total_size_bytes": 0,
+                "total_size_human": "0 B",
+                "files_with_findings": 0,
+                "total_findings": 0,
+                "findings_by_category": {},
+                "scan_duration_seconds": 0,
+            },
+            "user_file_details": [],
+        }
+    return _latest_extraction_result
 
 
 

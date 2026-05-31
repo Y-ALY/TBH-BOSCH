@@ -1002,6 +1002,15 @@ async function searchEmployees() {
                 badgeHtml = `<span class="compliance-badge badge-brand" style="margin-left: 8px;"><span class="badge-dot"></span>${scoreData.score}%</span>`;
             }
 
+            const fileCount = emp.file_count || 0;
+            const findingsCount = emp.findings_count || 0;
+            const filesBadge = fileCount > 0
+                ? `<span style="font-size: 11px; padding: 3px 10px; border-radius: 12px; background: rgba(16,185,129,0.1); color: #10b981; font-weight: 600; white-space: nowrap;">${fileCount} file${fileCount > 1 ? 's' : ''}</span>`
+                : `<span style="font-size: 11px; padding: 3px 10px; border-radius: 12px; background: rgba(255,255,255,0.04); color: var(--text-muted); font-weight: 500; white-space: nowrap;">No files</span>`;
+            const findingsBadge = findingsCount > 0
+                ? `<span style="font-size: 11px; padding: 3px 10px; border-radius: 12px; background: rgba(245,166,35,0.1); color: #f5a623; font-weight: 600; white-space: nowrap;">${findingsCount} findings</span>`
+                : '';
+
             html += `
                 <div class="glass-card emp-result-card" id="emp-card-${emp.employee_id}" onclick="selectEmployee(${JSON.stringify(emp).replace(/"/g, '&quot;')})">
                     <div class="emp-info">
@@ -1011,7 +1020,11 @@ async function searchEmployees() {
                             <div class="emp-meta">${escapeHtml(emp.email)} · ID: ${escapeHtml(emp.employee_id)}</div>
                         </div>
                     </div>
-                    <span class="emp-dept-badge">${escapeHtml(emp.department)}</span>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
+                        ${filesBadge}
+                        ${findingsBadge}
+                        <span class="emp-dept-badge">${escapeHtml(emp.department)}</span>
+                    </div>
                 </div>
             `;
         });

@@ -378,36 +378,42 @@ async function handleDelete(findingId) {
         alert("Failed to resolve issue.");
     }
 }
-// --- Dynamic Data Overview Stats ---
+// --- Dynamic Data Overview Stats (Organization-Wide for Admin) ---
 async function loadOverviewStats() {
-    const employeeId = "BX-21842";
-
     try {
-        const response = await fetch(`/api/user-details/${employeeId}`);
+        // Use the admin KPIs endpoint for organization-wide stats
+        const response = await fetch('/api/admin/kpis');
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
-        const files = data.files || [];
+        
+        // Also fetch user-details for the admin's own files to get retention data
+        const employeeId = "{{ user.employee_id }}";
+        const userResp = await fetch(`/api/user-details/${employeeId}`);
+        const userData = await userResp.json();
+        const files = userData.files || [];
 
         const now = new Date();
         const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-        let totalFiles = files.length;
+        // Use the KPI total for organization-wide file count
+        let totalFiles = data.metrics.total_scanned_files || 0;
         let expiringSoon = 0;
         let deleteCandidates = 0;
-        let flaggedFiles = 0;
+        let flaggedFiles = data.metrics.total_flagged_files || 0;
+        const expiredFiles = [];
 
+        // Calculate retention stats from all files visible to this admin view
         files.forEach(file => {
-            const deadline = new Date(file.retention_deadline);
-
-            if (deadline < now) {
-                deleteCandidates++;
-            }
-            else if (deadline >= now && deadline <= thirtyDaysFromNow) {
-                expiringSoon++;
-            }
-
-            if (file.findings && file.findings.length > 0) {
-                flaggedFiles++;
+            if (file.retention_deadline) {
+                const deadline = new Date(file.retention_deadline);
+                if (!isNaN(deadline)) {
+                    if (deadline < now) {
+                        deleteCandidates++;
+                        expiredFiles.push(file);
+                    } else if (deadline >= now && deadline <= thirtyDaysFromNow) {
+                        expiringSoon++;
+                    }
+                }
             }
         });
 
@@ -416,14 +422,13 @@ async function loadOverviewStats() {
         document.getElementById("stat-delete").textContent = deleteCandidates;
         document.getElementById("stat-flagged").textContent = flaggedFiles;
 
-        const profileCompliance = document.querySelector(".profile-grid strong:last-child");
-        if (profileCompliance) {
-            profileCompliance.textContent = complianceScore + "%";
+        if (deleteCandidates > 0 && typeof triggerGdprModal === 'function') {
+            triggerGdprModal(employeeId, expiredFiles);
         }
 
     } catch (error) {
         console.error("Error loading overview stats:", error);
-        ["stat-total", "stat-expiring", "stat-delete", "stat-compliance"].forEach(id => {
+        ["stat-total", "stat-expiring", "stat-delete", "stat-flagged"].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.textContent = "N/A";
         });
@@ -436,6 +441,8 @@ loadOverviewStats();
 
 </script>
 <script src="/static/js/dashboard.js?v=6"></script>
+
+{% include 'gdpr_modal_snippet.html' %}
 
 </body>
 </html>

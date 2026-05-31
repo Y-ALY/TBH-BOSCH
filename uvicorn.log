@@ -1,2 +1,12 @@
 INFO:     Will watch for changes in these directories: ['/Users/yousefaly/TBH-BOSCH']
-ERROR:    [Errno 48] Address already in use
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [38038] using WatchFiles
+INFO:     Started server process [38042]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+Successfully ingested 7415 files into FileMetadata on startup.
+INFO:     127.0.0.1:64432 - "GET /admin-dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64432 - "GET /api/admin/kpis HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64432 - "GET /api/admin/kpis HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64432 - "GET /api/employee/files/BX-17335 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64432 - "GET /api/user-details/BX-17335 HTTP/1.1" 200 OK

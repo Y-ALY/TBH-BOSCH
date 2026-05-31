@@ -27,7 +27,7 @@ from .models import (
 def save_state(scan_result: ScanResult, state_dir: str) -> str:
     """Persist scan state to JSON for future delta comparisons.
 
-    Also writes/overwrites `latest.json` as a convenience.
+    Writes/overwrites `latest.json`.
     """
     out_dir = Path(state_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -48,15 +48,11 @@ def save_state(scan_result: ScanResult, state_dir: str) -> str:
         files=files,
     )
 
-    # Write timestamped state file
-    state_path = out_dir / f"delta_state_{state.scan_id}.json"
-    _write_json(state_path, _delta_state_to_dict(state))
-
-    # Also write latest.json
+    # Write state to a single updating latest.json file
     latest_path = out_dir / "latest.json"
     _write_json(latest_path, _delta_state_to_dict(state))
 
-    return str(state_path)
+    return str(latest_path)
 
 
 def compare_delta(
