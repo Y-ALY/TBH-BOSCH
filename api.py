@@ -361,12 +361,32 @@ def _run_background_scan(
         connector = LocalSampleRepoConnector(repo_path=str(folder_path))
         scanned_results: list[FileScanResult] = []
         error_count = 0
+        files_scanned_count = 0
+        # Re-query job after commits so the ORM object stays bound to the session
+        _progress_interval = max(1, min(100, len(plan.to_scan) // 100))
+
+        def _update_progress() -> None:
+            """Commit progress so GET /api/scan/{scan_id} reflects live counters."""
+            nonlocal job
+            try:
+                db.commit()
+                # Re-fetch job after commit (SQLAlchemy expires objects by default)
+                job = db.query(ScanJobORM).filter(ScanJobORM.scan_id == scan_id).first()
+            except Exception:
+                db.rollback()
 
         def on_result(file_result: FileScanResult) -> None:
+            nonlocal files_scanned_count
+            files_scanned_count += 1
             # Persist findings via BulkWriter (batched upsert)
             for f in file_result.findings:
                 writer.add_finding(f)
             scanned_results.append(file_result)
+            # Periodic progress commit so API pollers see live counters
+            if files_scanned_count % _progress_interval == 0:
+                if job:
+                    job.files_scanned = files_scanned_count
+                _update_progress()
 
         def on_error(file_error) -> None:
             nonlocal error_count
@@ -380,6 +400,8 @@ def _run_background_scan(
                 message=file_error.message,
             )
             db.add(error_record)
+            if job:
+                job.files_error = error_count
             db.flush()
 
         # ── 5. Run streaming scan ────────────────────────────────────────
@@ -418,7 +440,16 @@ def _run_background_scan(
 
         # ── 6. Flush remaining records ────────────────────────────────────
         rows = writer.flush()
-        db.commit()
+
+        # ── 6b. Final progress update (catch partial batch at end of scan) ─
+        if job:
+            job.files_scanned = files_scanned_count
+            job.files_error = error_count
+        try:
+            db.commit()
+            job = db.query(ScanJobORM).filter(ScanJobORM.scan_id == scan_id).first()
+        except Exception:
+            db.rollback()
 
         # ── 7. Save delta state (snapshot all discovered files) ───────────
         try:
@@ -443,14 +474,16 @@ def _run_background_scan(
         }
 
         # ── 9. Update job as completed ────────────────────────────────────
-        job.status = "completed"
-        job.completed_at = datetime.now().isoformat()
-        job.total_files = plan.total_discovered
-        job.files_scanned = getattr(metrics, "files_scanned", 0)
-        job.files_error = error_count
-        job.total_findings = getattr(metrics, "total_findings", 0)
-        job.metrics_json = json.dumps(scan_metrics)
-        db.commit()
+        job = db.query(ScanJobORM).filter(ScanJobORM.scan_id == scan_id).first()
+        if job:
+            job.status = "completed"
+            job.completed_at = datetime.now().isoformat()
+            job.total_files = plan.total_discovered
+            job.files_scanned = files_scanned_count
+            job.files_error = error_count
+            job.total_findings = getattr(metrics, "total_findings", 0)
+            job.metrics_json = json.dumps(scan_metrics)
+            db.commit()
 
         logger.info(
             "Background scan %s complete: %d discovered, %d scanned, %d skipped, "
