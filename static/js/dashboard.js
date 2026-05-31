@@ -152,6 +152,31 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // =============================================
+    // 4.5. DYNAMIC SCROLL SCALING
+    // =============================================
+    const scaleSections = document.querySelectorAll('.full-page-section');
+    if (scaleSections.length > 0) {
+        const scaleObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('focused');
+                } else {
+                    entry.target.classList.remove('focused');
+                }
+            });
+        }, {
+            threshold: 0,
+            rootMargin: '-30% 0px -30% 0px'
+        });
+
+        scaleSections.forEach(el => {
+            scaleObserver.observe(el);
+            // Default to not focused if not initially in center
+            el.classList.remove('focused');
+        });
+    }
+
+    // =============================================
     // 5. TOPBAR HIDE ON SCROLL DOWN
     // =============================================
     let lastScrollY = window.scrollY;

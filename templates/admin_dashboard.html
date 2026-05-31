@@ -105,12 +105,6 @@
         </span>
         <span class="label">Overview</span>
     </a>
-    <a href="{% if user and user.email == 'admin@bosch.com' %}/admin-dashboard{% else %}/employee-dashboard{% endif %}#actions" id="nav-actions">
-        <span class="icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-        </span>
-        <span class="label">Actions</span>
-    </a>
     <a href="/data-points" id="nav-data-points">
         <span class="icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
@@ -139,16 +133,16 @@
     <section class="hero reveal">
 
         <h1>
-            Admin Control Panel
+            Main Dashboard
         </h1>
 
         <p>
-            Manage organization-wide GDPR compliance, oversee employee data, and review flagged files.
+            Manage and delete private documents on the database.
         </p>
 
     </section>
 
-    <section id="profile" class="glass-card profile-card reveal" style="margin-bottom: 40px;">
+    <section id="profile" class="glass-card profile-card reveal full-page-section" style="margin-bottom: 40px;">
         <div class="profile-left">
             <div class="profile-avatar">
                 {{ user.first_name[0] }}{{ user.last_name[0] }}
@@ -170,7 +164,7 @@
         </div>
     </section>
 
-    <section id="admin-overview" class="reveal" style="margin-bottom: 40px;">
+    <section id="admin-overview" class="reveal full-page-section" style="margin-bottom: 40px;">
         <div class="section-header">
             <h2>Organization KPIs</h2>
         </div>
@@ -190,11 +184,12 @@
         </div>
     </section>
 
-    <section id="alerts" class="reveal">
+    <section id="alerts" class="reveal full-page-section">
 
-        <div class="section-header">
+        <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
 
             <h2>Recently Flagged Documents</h2>
+            <a href="/data-points" style="font-size: 14px; padding: 8px 16px; border-radius: 2px; background: transparent; border: 1px solid var(--border-subtle); color: var(--text-primary); text-decoration: none; transition: all 0.3s ease;">View All Documents →</a>
 
         </div>
 
@@ -240,7 +235,7 @@
 
     </section>
 
-    <section id="overview" class="reveal">
+    <section id="overview" class="reveal full-page-section">
 
         <div class="section-header">
 
@@ -262,43 +257,13 @@
 
             <a href="/data-points?filter=delete" class="glass-card stat-card stat-link">
                 <h3 id="stat-delete">—</h3>
-                <span>Delete Candidates</span>
+                <span>Retention Period Ended</span>
             </a>
 
-            <a href="/data-points?filter=clean" class="glass-card stat-card stat-link">
-                <h3 id="stat-compliance">—</h3>
-                <span>Compliance Score</span>
+            <a href="/data-points?filter=flagged" class="glass-card stat-card stat-link">
+                <h3 id="stat-flagged">—</h3>
+                <span>Flagged Files</span>
             </a>
-
-        </div>
-
-    </section>
-
-    <section id="actions" class="reveal">
-
-        <div class="section-header">
-
-            <h2>Quick Actions</h2>
-
-        </div>
-
-        <div class="action-grid">
-
-            <button class="action-btn">
-                Request Data Export
-            </button>
-
-            <button class="action-btn">
-                Request Deletion
-            </button>
-
-            <button class="action-btn">
-                Correct Information
-            </button>
-
-            <button class="action-btn">
-                Restrict Processing
-            </button>
 
         </div>
 
@@ -370,14 +335,19 @@ document.addEventListener("DOMContentLoaded", async () => {
             card.className = 'glass-card alert-card';
             
             card.innerHTML = `
-                <h3 style="word-break: break-all;">${finding.file_name}</h3>
-                <p>${finding.category}</p>
-                <div style="margin-top: 10px; background: rgba(255,255,255,0.04); padding: 8px; border-radius: 6px; font-family: 'Space Grotesk', monospace; font-size: 13px; color: var(--text-secondary);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    <h3 style="word-break: break-all; margin: 0;">${finding.file_name}</h3>
+                </div>
+                <p style="margin: 0 0 15px 0; color: var(--text-secondary); font-size: 13px;">${finding.category}</p>
+                <div style="margin-bottom: 15px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); padding: 8px; border-radius: 2px; font-family: 'Space Grotesk', monospace; font-size: 12px; color: var(--text-secondary);">
                     ${finding.flagged_snippet}
                 </div>
                 <button 
                     onclick="handleDelete(${finding.finding_id})"
-                    style="margin-top: 15px; padding: 8px 16px; background: linear-gradient(90deg, #ea0016, #d10000); color: white; border: none; border-radius: 8px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px; transition: all 0.3s ease;">
+                    style="padding: 8px 16px; background: transparent; color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 2px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13px; transition: all 0.3s ease;"
+                    onmouseover="this.style.background='var(--bg-card-hover)'; this.style.borderColor='var(--border-hover)'"
+                    onmouseout="this.style.background='transparent'; this.style.borderColor='var(--border-subtle)'">
                     Resolve Issue
                 </button>
             `;
@@ -423,7 +393,7 @@ async function loadOverviewStats() {
         let totalFiles = files.length;
         let expiringSoon = 0;
         let deleteCandidates = 0;
-        let cleanFiles = 0;
+        let flaggedFiles = 0;
 
         files.forEach(file => {
             const deadline = new Date(file.retention_deadline);
@@ -435,19 +405,15 @@ async function loadOverviewStats() {
                 expiringSoon++;
             }
 
-            if (!file.findings || file.findings.length === 0) {
-                cleanFiles++;
+            if (file.findings && file.findings.length > 0) {
+                flaggedFiles++;
             }
         });
-
-        const complianceScore = totalFiles > 0
-            ? Math.round((cleanFiles / totalFiles) * 100)
-            : 100;
 
         document.getElementById("stat-total").textContent = totalFiles;
         document.getElementById("stat-expiring").textContent = expiringSoon;
         document.getElementById("stat-delete").textContent = deleteCandidates;
-        document.getElementById("stat-compliance").textContent = complianceScore + "%";
+        document.getElementById("stat-flagged").textContent = flaggedFiles;
 
         const profileCompliance = document.querySelector(".profile-grid strong:last-child");
         if (profileCompliance) {

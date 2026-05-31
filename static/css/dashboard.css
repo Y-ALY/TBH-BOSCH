@@ -17,13 +17,13 @@
     --bg-card-hover: rgba(255,255,255,0.06);
     --bg-topbar: rgba(10,10,15,0.82);
     --bg-sidebar: rgba(12,12,18,0.92);
-    --border-subtle: rgba(255,255,255,0.06);
-    --border-hover: rgba(255,255,255,0.12);
+    --border-subtle: rgba(255,255,255,0.12);
+    --border-hover: rgba(255,255,255,0.25);
     --text-primary: #f0f0f5;
     --text-secondary: #8a8a9a;
     --text-muted: #55556a;
-    --shadow-card: 0 4px 30px rgba(0,0,0,0.3);
-    --shadow-card-hover: 0 20px 50px rgba(0,0,0,0.45);
+    --shadow-card: 0 8px 24px rgba(0,0,0,0.5);
+    --shadow-card-hover: 0 12px 32px rgba(0,0,0,0.7);
     --shadow-glow: 0 0 40px rgba(234,0,22,0.06);
     --grain-opacity: 0.03;
     --particle-color: 255,255,255;
@@ -39,9 +39,9 @@
     --topbar-h: 72px;
     --sidebar-w: 250px;
     --sidebar-w-collapsed: 76px;
-    --radius-sm: 4px;
-    --radius-md: 6px;
-    --radius-lg: 8px;
+    --radius-sm: 3px;
+    --radius-md: 4px;
+    --radius-lg: 5px;
 
     /* ---- Transitions ---- */
     --transition-theme: background 0.5s ease, color 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease;
@@ -57,13 +57,13 @@ body.light {
     --bg-card-hover: rgba(255,255,255,0.88);
     --bg-topbar: rgba(255,255,255,0.82);
     --bg-sidebar: rgba(255,255,255,0.88);
-    --border-subtle: rgba(0,0,0,0.06);
-    --border-hover: rgba(0,0,0,0.12);
+    --border-subtle: rgba(0,0,0,0.15);
+    --border-hover: rgba(0,0,0,0.3);
     --text-primary: #1a1a2e;
     --text-secondary: #555568;
     --text-muted: #888898;
-    --shadow-card: 0 4px 20px rgba(0,0,0,0.05);
-    --shadow-card-hover: 0 16px 40px rgba(0,0,0,0.1);
+    --shadow-card: 0 8px 24px rgba(0,0,0,0.15);
+    --shadow-card-hover: 0 12px 32px rgba(0,0,0,0.25);
     --shadow-glow: 0 0 30px rgba(0,123,192,0.06);
     --grain-opacity: 0.015;
     --particle-color: 30,30,50;
@@ -750,6 +750,23 @@ body.light .explore-btn:hover {
     max-width: 500px;
     color: var(--text-secondary);
     line-height: 1.7;
+}
+
+/* =========================================
+   DYNAMIC SCROLL SECTIONS
+   ========================================= */
+.full-page-section {
+    margin-bottom: 80px;
+    padding-top: 20px;
+    transition: transform 0.6s cubic-bezier(0.16,1,0.3,1), opacity 0.6s cubic-bezier(0.16,1,0.3,1);
+    transform: scale(0.9);
+    opacity: 0.4;
+    transform-origin: center center;
+}
+
+.full-page-section.focused {
+    transform: scale(1);
+    opacity: 1;
 }
 
 /* =========================================
