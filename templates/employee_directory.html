@@ -154,7 +154,7 @@
             associated files and GDPR findings.
         </p>
 
-        <form class="search-form" id="searchForm" onsubmit="return false;" style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <form class="search-form" id="searchForm" onsubmit="return false;" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch;">
 
             <input
                 type="text"
@@ -162,10 +162,10 @@
                 id="searchInput"
                 placeholder="Search by Name, Email, or User ID..."
                 autocomplete="off"
-                style="flex-grow: 1;"
+                style="flex: 1 1 auto; min-width: 250px; max-width: 100%;"
             >
 
-            <select id="categoryFilter" class="search-input" style="cursor: pointer; min-width: 180px;">
+            <select id="categoryFilter" class="search-input" style="cursor: pointer; flex: 1 1 auto; min-width: 250px; max-width: 100%;">
                 <option value="">All Categories</option>
                 <option value="passport">Passport / ID</option>
                 <option value="financial">Financial (IBAN/Credit Card)</option>
@@ -189,10 +189,34 @@
 
 </div>
 
+<!-- Native PDF Viewer Modal -->
+<div id="pdfViewerModal" class="modal" style="display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.85); align-items: center; justify-content: center; backdrop-filter: blur(5px);">
+    <div class="glass-card" style="width: 95%; max-width: 1200px; height: 90vh; display: flex; flex-direction: column; padding: 20px; position: relative; margin: 2.5vh auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h2 id="pdfViewerTitle" style="font-size: 20px; margin: 0; color: var(--text-primary);">Document Viewer</h2>
+            <button onclick="closePdfViewer()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 28px; line-height: 1;">&times;</button>
+        </div>
+        <div style="flex-grow: 1; border-radius: 8px; overflow: hidden; background: #fff;">
+            <iframe id="pdfViewerFrame" style="width: 100%; height: 100%; border: none;"></iframe>
+        </div>
+    </div>
+</div>
+
 <script>
 
 /* ---- Account Menu Toggle ---- */
 // Now handled globally in dashboard.js
+
+function openPdfViewer(fileName, fileUrl) {
+    document.getElementById('pdfViewerTitle').innerText = fileName;
+    document.getElementById('pdfViewerFrame').src = fileUrl;
+    document.getElementById('pdfViewerModal').style.display = 'flex';
+}
+
+function closePdfViewer() {
+    document.getElementById('pdfViewerModal').style.display = 'none';
+    document.getElementById('pdfViewerFrame').src = '';
+}
 
 /* ---- Search Logic ---- */
 
@@ -213,8 +237,7 @@ async function handleSearch(e) {
     const query = searchInput.value.trim();
     const category = categoryFilter.value;
     
-    // We can search even if query is empty but category is selected
-    if (!query && !category) return;
+    // Show loading state
 
     // Show loading state
     headerArea.innerHTML = "";
@@ -289,24 +312,28 @@ function renderResults(data) {
         card.className = "glass-card alert-card result-card";
 
         card.innerHTML = `
-            <h3>
-                <span class="file-icon">${fileIcon}</span>
-                ${escapeHtml(finding.file_id)}
+            <h3 style="display: flex; align-items: flex-start; gap: 10px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-all;">
+                <span class="file-icon" style="flex-shrink: 0;">${fileIcon}</span>
+                <span style="flex: 1; min-width: 0;">${escapeHtml(finding.file_id)}</span>
             </h3>
 
-            <span class="type-label">${escapeHtml(finding.type)}</span>
+            <span class="type-label" style="display: inline-block; max-width: 100%; word-break: break-all; white-space: normal;">${escapeHtml(finding.type)}</span>
 
-            <p class="context-text">
+            <p class="context-text" style="word-wrap: break-word; overflow-wrap: break-word; word-break: break-all; min-width: 0; white-space: normal;">
                 ${escapeHtml(finding.context || finding.value)}
             </p>
 
-            <span class="${riskClass}">
+            <span class="${riskClass}" style="word-wrap: break-word;">
                 ${capitalize(finding.risk_level)} Risk
             </span>
-            
-            <a href="/user-details/${encodeURIComponent(finding.assigned_owner || 'unknown')}" class="action-btn" style="margin-top: 15px; text-decoration: none; text-align: center; display: inline-block; padding: 10px;">
-                View User Data →
-            </a>
+            <div style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
+                <button class="action-btn" style="flex: 1; text-align: center; padding: 10px; background: var(--accent-blue); color: white; border-color: var(--accent-blue);" onclick="openPdfViewer('File ' + ${finding.db_file_id}, '/api/files/${finding.db_file_id}/view')">
+                    View File
+                </button>
+                <a href="/user-details/${encodeURIComponent(finding.assigned_owner || 'unknown')}" class="action-btn" style="flex: 1; text-decoration: none; text-align: center; padding: 10px;">
+                    View Findings
+                </a>
+            </div>
         `;
 
         resultsArea.appendChild(card);
@@ -345,6 +372,11 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+// Load all files initially when the page loads
+document.addEventListener("DOMContentLoaded", () => {
+    handleSearch(new Event("submit"));
+});
 
 </script>
 <script src="/static/js/dashboard.js?v=6"></script>

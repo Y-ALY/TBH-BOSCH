@@ -343,7 +343,15 @@ def user_details(
 from sqlalchemy import func
 
 @app.get("/api/user-details/{employee_id}")
-def get_user_details(employee_id: str, db: Session = Depends(get_db)):
+def get_user_details(
+    employee_id: str, 
+    session_emp_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db)
+):
+    from fastapi import HTTPException
+    if not session_emp_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
     # Resolve name or email to proper BX-XXXXX ID
     resolved_emp = None
     if employee_id and employee_id != "all":
@@ -366,6 +374,11 @@ def get_user_details(employee_id: str, db: Session = Depends(get_db)):
 
     if resolved_emp:
         employee_id = resolved_emp.employee_id
+
+    if session_emp_id != "BX-ADMIN" and session_emp_id != employee_id and employee_id != "all":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if session_emp_id != "BX-ADMIN" and employee_id == "all":
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     if employee_id == "all":
         user_files = db.query(FileMetadata).all()
@@ -458,7 +471,14 @@ def get_user_details(employee_id: str, db: Session = Depends(get_db)):
 
 
 @app.get("/api/admin/kpis")
-def get_admin_kpis(db: Session = Depends(get_db)):
+def get_admin_kpis(
+    session_emp_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db)
+):
+    from fastapi import HTTPException
+    if session_emp_id != "BX-ADMIN":
+        raise HTTPException(status_code=403, detail="Forbidden")
+        
     from datetime import datetime, timedelta
     
     # 1. Fetch all files and filter out deleted ones
@@ -539,7 +559,15 @@ def get_admin_kpis(db: Session = Depends(get_db)):
     }
 
 @app.get("/api/admin/employees/search")
-def search_employees(q: str, db: Session = Depends(get_db)):
+def search_employees(
+    q: str, 
+    session_emp_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db)
+):
+    from fastapi import HTTPException
+    if session_emp_id != "BX-ADMIN":
+        raise HTTPException(status_code=403, detail="Forbidden")
+        
     if not q:
         return []
     
@@ -651,7 +679,15 @@ class ActionRequest(BaseModel):
     action: str  # e.g., "delete" or "false_positive"
 
 @app.get("/api/employee/files/{employee_id}")
-def get_employee_files(employee_id: str, db: Session = Depends(get_db)):
+def get_employee_files(
+    employee_id: str, 
+    session_emp_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db)
+):
+    from fastapi import HTTPException
+    if not session_emp_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
     from datetime import datetime
     
     # Resolve name or email to proper BX-XXXXX ID
@@ -676,6 +712,9 @@ def get_employee_files(employee_id: str, db: Session = Depends(get_db)):
 
     if resolved_emp:
         employee_id = resolved_emp.employee_id
+
+    if session_emp_id != "BX-ADMIN" and session_emp_id != employee_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     # 1. Find all files owned by this specific employee
     user_files = db.query(FileMetadata).filter(FileMetadata.owner_employee_id == employee_id).all()
@@ -1173,24 +1212,30 @@ def trigger_extraction(
     import hashlib
 
     # Cache all existing finding values to prevent duplicates
+    # Cache existing (file_id, finding_value) pairs to prevent duplicates within the same file
     existing_values = {
-        f[0] for f in db.query(Finding.flagged_snippet).all() if f[0]
+        (f.file_id, f.flagged_snippet) for f in db.query(Finding.file_id, Finding.flagged_snippet).all() if f.flagged_snippet
     }
 
-    # Cache existing file paths for FileMetadata lookup
+    # Cache existing file names for FileMetadata lookup
+    import os
     all_metas = db.query(database.FileMetadata.id, database.FileMetadata.file_path).all()
-    meta_id_by_path = {fp: mid for mid, fp in all_metas}
+    meta_id_by_name = {os.path.basename(fp): mid for mid, fp in all_metas}
 
     new_findings_added = 0
     for file_detail in result.get("user_file_details", []):
         file_path = file_detail["file_path"]
-        file_id = meta_id_by_path.get(file_path)
+        file_name = os.path.basename(file_path)
+        file_id = meta_id_by_name.get(file_name)
+        
+        if not file_id:
+            continue
 
         for finding in file_detail.get("findings", []):
             matched_val = finding["matched_value"]
-            if matched_val in existing_values:
+            if (file_id, matched_val) in existing_values:
                 continue
-            existing_values.add(matched_val)
+            existing_values.add((file_id, matched_val))
 
             row = Finding(
                 file_id=file_id,
@@ -1307,16 +1352,39 @@ def search_findings(
     resolved: Optional[bool] = QueryParam(None),
     skip: int = QueryParam(0, ge=0),
     limit: int = QueryParam(50, ge=1, le=1000),
+    session_emp_id: Optional[str] = Cookie(None),
     db: Session = Depends(get_db),
 ):
+    from fastapi import HTTPException
+    if not session_emp_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
     """Search findings from the live SQLite database."""
     query = db.query(Finding)
+
+    if session_emp_id != "BX-ADMIN":
+        query = query.join(FileMetadata, Finding.file_id == FileMetadata.id)\
+                     .filter(FileMetadata.owner_employee_id == session_emp_id)
 
     if risk_level:
         query = query.filter(Finding.risk_level == risk_level)
     if type:
-        query = query.filter(Finding.type == type)
-    if owner:
+        if type == "financial":
+            query = query.filter(Finding.type.in_(["iban", "credit_card", "bank"]))
+        elif type == "contact":
+            query = query.filter(Finding.type.in_(["email", "phone", "address"]))
+        elif type == "passport":
+            query = query.filter(Finding.type.in_(["passport", "id_card", "ssn", "tax_id"]))
+        elif type == "other":
+            query = query.filter(~Finding.type.in_([
+                "iban", "credit_card", "bank",
+                "email", "phone", "address",
+                "passport", "id_card", "ssn", "tax_id"
+            ]))
+        else:
+            query = query.filter(Finding.type == type)
+
+    if owner and session_emp_id == "BX-ADMIN":
         query = query.filter(Finding.assigned_owner == owner)
     if resolved is not None:
         query = query.filter(Finding.owner_resolved == resolved)
@@ -1329,31 +1397,70 @@ def search_findings(
         )
 
     all_results = query.all()
-    total_count = len(all_results)
-    risk_breakdown: Dict[str, int] = {}
+    
+    # Group findings by file to return exactly one entry per file
+    grouped_files = {}
     for res in all_results:
-        rl = res.risk_level or "unknown"
+        file_id = res.file_id_str or str(res.file_id)
+        if file_id not in grouped_files:
+            grouped_files[file_id] = {
+                "finding_id": res.finding_uid or str(res.id),
+                "db_file_id": res.file_id,
+                "file_id": file_id,
+                "types": set(),
+                "values": set(),
+                "context": res.context or "unknown",
+                "risk_level": res.risk_level or "low",
+                "status": res.review_status or res.status or "pending_review",
+                "assigned_owner": res.assigned_owner or "",
+                "owner_resolved": res.owner_resolved or False,
+            }
+        
+        # Aggregate types
+        typ = res.type or res.category or ""
+        if typ:
+            grouped_files[file_id]["types"].add(typ)
+            
+        # Determine highest risk
+        rl = (res.risk_level or "low").lower()
+        curr_risk = grouped_files[file_id]["risk_level"].lower()
+        if rl == "high" or (rl == "medium" and curr_risk == "low"):
+            grouped_files[file_id]["risk_level"] = rl
+
+    # Format the results
+    results = []
+    risk_breakdown: Dict[str, int] = {}
+    
+    for file_id, data in grouped_files.items():
+        types_list = list(data["types"])
+        if len(types_list) > 1:
+            display_type = "multiple"
+        elif len(types_list) == 1:
+            display_type = types_list[0]
+        else:
+            display_type = ""
+            
+        rl = data["risk_level"]
         risk_breakdown[rl] = risk_breakdown.get(rl, 0) + 1
+            
+        results.append({
+            "finding_id": data["finding_id"],
+            "db_file_id": data["db_file_id"],
+            "file_id": file_id,
+            "type": display_type,
+            "value": "",
+            "context": data["context"],
+            "risk_level": rl,
+            "status": data["status"],
+            "assigned_owner": data["assigned_owner"],
+            "owner_resolved": data["owner_resolved"],
+        })
 
-    paginated = all_results[skip : skip + limit]
-
-    results = [
-        {
-            "finding_id": row.finding_uid or str(row.id),
-            "file_id": row.file_id_str or str(row.file_id or ""),
-            "type": row.type or row.category or "",
-            "value": row.value or row.flagged_snippet or "",
-            "context": row.context or "unknown",
-            "risk_level": row.risk_level or "medium",
-            "status": row.review_status or row.status or "pending_review",
-            "assigned_owner": row.assigned_owner or "",
-            "owner_resolved": row.owner_resolved or False,
-        }
-        for row in paginated
-    ]
+    total_count = len(results)
+    paginated = results[skip : skip + limit]
 
     return {
-        "results": results,
+        "results": paginated,
         "metadata": {
             "total_count": total_count,
             "risk_breakdown": risk_breakdown,
@@ -1627,15 +1734,47 @@ async def scan_uploaded_image(file: UploadFile = File(...)):
 
 @app.get("/api/scan/image/cache-stats")
 def ocr_cache_stats():
-    """Return basic OCR cache statistics (admin/debug endpoint)."""
+    '''Return basic OCR cache statistics (admin/debug endpoint).'''
     from src.ocr_scanner import get_cache_stats
     return get_cache_stats()
 
 
 @app.post("/api/scan/image/clear-cache")
 def ocr_clear_cache():
-    """Flush the OCR result cache (admin endpoint)."""
+    '''Flush the OCR result cache (admin endpoint).'''
     from src.ocr_scanner import clear_cache
     evicted = clear_cache()
     return {"status": "success", "evicted_entries": evicted}
 
+
+from fastapi.responses import FileResponse
+from fastapi import Cookie
+from typing import Optional
+
+@app.get("/api/files/{file_id}/view")
+def view_file_content(
+    file_id: int,
+    session_emp_id: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db)
+):
+    from fastapi import HTTPException
+    import os
+    
+    if not session_emp_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    file_meta = db.query(FileMetadata).filter(FileMetadata.id == file_id).first()
+    if not file_meta:
+        raise HTTPException(status_code=404, detail="File Not Found")
+        
+    # ONLY the file owner can view the file. Admin CANNOT view the raw file!
+    # This ensures GDPR compliance where employees have the right to access their own data,
+    # but admins cannot arbitrarily snoop on raw file contents.
+    if file_meta.owner_employee_id != session_emp_id:
+        raise HTTPException(status_code=403, detail="Forbidden: You can only view your own files.")
+        
+    file_path = file_meta.file_path
+    if file_path.startswith("[DELETED]") or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File has been physically deleted.")
+        
+    return FileResponse(file_path)
