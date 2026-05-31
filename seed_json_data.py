@@ -51,8 +51,9 @@ def seed_data():
         # 3. Create the Employee Account if it doesn't exist
         user = db.query(Employee).filter(Employee.email == email).first()
         if not user:
-            # Generate a pseudo-random BX-ID based on their email
-            emp_id = f"BX-{abs(hash(email)) % 10000 + 1000}"
+            # Generate a deterministic BX-ID based on their email
+            emp_id_int = int(hashlib.md5(email.encode()).hexdigest(), 16) % 90000 + 10000
+            emp_id = f"BX-{emp_id_int}"
             user = Employee(
                 employee_id=emp_id,
                 email=email,

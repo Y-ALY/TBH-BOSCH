@@ -46,5 +46,39 @@ class Finding(Base):
     reasoning = Column(String)
     status = Column(String, default="Pending") # Options: Pending, Deleted, False_Positive
 
+    # ── Extended fields from the scan pipeline ─────────────────────────
+    finding_uid = Column(String, unique=True, index=True)  # pipeline finding_id (str)
+    file_id_str = Column(String, index=True)               # pipeline file_id (str path / name)
+    type = Column(String)                                   # email | tax_id | iban …
+    value = Column(String)                                  # the raw PII value found
+    field = Column(String, default="")
+    context = Column(String, default="unknown")
+    risk_level = Column(String, default="medium")           # high | medium | low
+    confidence = Column(Float, default=1.0)
+    evidence = Column(String, default="")
+    recommended_action = Column(String, default="review")
+    assigned_owner = Column(String, default="")
+    owner_email = Column(String, default="")
+    owner_department = Column(String, default="")
+    owner_resolved = Column(Boolean, default=False)
+    escalation_target = Column(String, default="")
+
+    # Review state (managed by the API layer)
+    review_status = Column(String, default="pending")       # pending | completed
+    review_action = Column(String, nullable=True)
+    reviewer = Column(String, nullable=True)
+    reviewed_at = Column(String, nullable=True)
+
+
+# ── Reusable DB session dependency ────────────────────────────────────────────
+def get_db():
+    """Yield a SQLAlchemy session; auto-closes when the request ends."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 # Create the tables in the database
 Base.metadata.create_all(bind=engine)

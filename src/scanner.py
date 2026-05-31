@@ -55,13 +55,17 @@ def _extract_fields(text: str) -> dict[str, str]:
 # Full scan
 # ---------------------------------------------------------------------------
 
-def run_full_scan(connector: Connector) -> ScanResult:
+def run_full_scan(connector: Connector, *, db_session=None) -> ScanResult:
     """Execute a complete scan across all files in the source.
 
     1. List all files via the connector.
     2. For each file: download → parse PDF → extract entities →
        classify document type → extract fields → assign owners.
     3. Return a ScanResult with all parsed documents and findings.
+
+    Args:
+        connector:   Data source connector.
+        db_session:  Optional SQLAlchemy session for dynamic Employee lookups.
     """
     files = connector.list_files()
     scan_result = ScanResult(
@@ -106,7 +110,13 @@ def run_full_scan(connector: Connector) -> ScanResult:
         if not needs_ocr:
             findings = extract_entities(full_text, pages)
             owner_hints = connector.get_owner_hints(file_meta.file_id)
-            assign_owners(findings, owner_hints)
+            assign_owners(
+                findings,
+                owner_hints,
+                file_path=file_meta.path,
+                fields=fields,
+                db_session=db_session,
+            )
 
             # Set file_id on each finding
             for f in findings:
@@ -121,7 +131,7 @@ def run_full_scan(connector: Connector) -> ScanResult:
 # AI-enhanced scan (wraps full scan + AI enrichment)
 # ---------------------------------------------------------------------------
 
-def run_ai_scan(connector, ai_parser=None) -> ScanResult:
+def run_ai_scan(connector, ai_parser=None, *, db_session=None) -> ScanResult:
     """Run full scan, then enrich with AI parsing on each document.
 
     AI overrides:
@@ -130,8 +140,13 @@ def run_ai_scan(connector, ai_parser=None) -> ScanResult:
       - upgrades/downgrades risk on existing findings based on context
 
     Falls back gracefully to regex-only if AI parser is unavailable.
+
+    Args:
+        connector:   Data source connector.
+        ai_parser:   Optional AI parser instance.
+        db_session:  Optional SQLAlchemy session for dynamic Employee lookups.
     """
-    result = run_full_scan(connector)
+    result = run_full_scan(connector, db_session=db_session)
 
     if ai_parser is None:
         return result  # regex-only mode
@@ -185,9 +200,19 @@ def run_ai_scan(connector, ai_parser=None) -> ScanResult:
             doc.fields["_ai_error"] = str(e)
 
     # Re-assign owners (AI may have added findings)
+    # Resolve file path for each document for path-based owner detection
     for doc in result.parsed_documents:
         doc_findings = [f for f in result.findings if f.file_id == doc.file_id]
         owner_hints = connector.get_owner_hints(doc.file_id)
-        assign_owners(doc_findings, owner_hints)
+        # Resolve the physical file path from the connector
+        file_meta = connector.get_file_metadata(doc.file_id)
+        file_path = file_meta.path if file_meta else ""
+        assign_owners(
+            doc_findings,
+            owner_hints,
+            file_path=file_path,
+            fields=doc.fields,
+            db_session=db_session,
+        )
 
     return result

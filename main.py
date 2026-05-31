@@ -7,13 +7,149 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import database
+from database import get_db, Employee, FileMetadata, Finding
 
-import json
 import os
 from typing import Optional, List, Dict, Any
 
 app = FastAPI(title="Bosch GDPR Scan Engine API")
 
+from database import SessionLocal
+
+@app.on_event("startup")
+def startup_event():
+    import json
+    import uuid
+    from pathlib import Path
+    from datetime import datetime, timedelta
+    
+    db = SessionLocal()
+    try:
+        print("Forcefully clearing DB tables for clean hackathon demo state...")
+        db.query(Finding).delete()
+        db.query(FileMetadata).delete()
+        db.commit()
+        
+        # 1. Inject sample user data
+        user = db.query(Employee).filter(Employee.email == "john.doe@company.com").first()
+        if not user:
+            user = Employee(
+                employee_id="BX-1001",
+                email="john.doe@company.com",
+                first_name="John",
+                last_name="Doe",
+                password="password123",
+                department="Engineering",
+                location="Heilbronn"
+            )
+            db.add(user)
+            db.commit()
+
+        # 2. Open and parse the test cases JSON
+        json_path = Path("tests/test_cases/workflow_input_test_cases.json")
+        if not json_path.exists():
+            print(f"\n[WARNING] Seed file missing: {json_path}")
+            print("Please ensure the file exists. Mock data injection bypassed.\n")
+            return
+
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        # Defensively extract the list of cases
+        cases = data.get("cases", []) if isinstance(data, dict) else data
+        if not isinstance(cases, list):
+            cases = []
+            
+        # Seed the DB with Finding models
+        import re
+        import hashlib
+        for idx, case in enumerate(cases):
+            doc = case.get("document", {})
+            file_name = doc.get("file_name", "unknown_file.txt")
+            content = doc.get("content", "")
+            
+            # Dynamically determine the owner_employee_id based on the email in the content
+            email_match = re.search(r'[\w\.-]+@[\w\.-]+', content)
+            email = email_match.group(0).lower().rstrip('.') if email_match else "john.doe@company.com"
+            user_record = db.query(Employee).filter(Employee.email == email).first()
+            if user_record:
+                owner_id = user_record.employee_id
+            else:
+                emp_id_int = int(hashlib.md5(email.encode()).hexdigest(), 16) % 90000 + 10000
+                owner_id = f"BX-{emp_id_int}"
+            
+            # Create FileMetadata to avoid breaking other endpoints
+            f_meta = db.query(FileMetadata).filter(FileMetadata.file_path == f"/simulated_drive/{file_name}").first()
+            if not f_meta:
+                days_offset = -10 if idx % 3 == 0 else (15 if idx % 3 == 1 else 200)
+                f_meta = FileMetadata(
+                    file_path=f"/simulated_drive/{file_name}",
+                    owner_employee_id=owner_id,
+                    size_bytes=len(content),
+                    file_hash=f"hash_{file_name}",
+                    last_modified=datetime.now(),
+                    retention_deadline=datetime.now() + timedelta(days=days_offset)
+                )
+                db.add(f_meta)
+                db.commit()
+                db.refresh(f_meta)
+            
+            expected = case.get("expected", {})
+            categories = expected.get("challenge_personal_data_present", [])
+            type_val = ", ".join(categories) if categories else "PII"
+            
+            # We can use part of the content as the flagged_snippet/value
+            value_val = content[:100] + "..." if len(content) > 100 else content
+            
+            # Simple logic to determine risk
+            risk_level = "medium"
+            if "passport_number" in categories or "credit_card" in expected.get("exact_match_counts", {}):
+                risk_level = "high"
+                
+            finding = Finding(
+                finding_uid=str(uuid.uuid4()),
+                file_id=f_meta.id,
+                file_id_str=file_name,
+                type=type_val,
+                category=type_val,
+                value=value_val,
+                flagged_snippet=value_val,
+                context=content,
+                risk_level=risk_level,
+                status="Pending",
+                assigned_owner=owner_id # Good for UI logic
+            )
+            db.add(finding)
+        
+        # Explicitly create 3 'clean' FileMetadata records
+        for i in range(1, 4):
+            clean_meta = FileMetadata(
+                file_path=f"/simulated_drive/clean_report_2026_{i}.pdf",
+                owner_employee_id="BX-1001",
+                size_bytes=5000,
+                file_hash=f"hash_clean_{i}",
+                last_modified=datetime.now(),
+                retention_deadline=datetime.now() + timedelta(days=200)
+            )
+            db.add(clean_meta)
+            
+            clean_meta_anna = FileMetadata(
+                file_path=f"/simulated_drive/anna_clean_report_2026_{i}.pdf",
+                owner_employee_id="BX-26357",
+                size_bytes=5000,
+                file_hash=f"hash_anna_clean_{i}",
+                last_modified=datetime.now(),
+                retention_deadline=datetime.now() + timedelta(days=200)
+            )
+            db.add(clean_meta_anna)
+
+        db.commit()
+        print(f"Mock data successfully seeded from {json_path}!")
+            
+    except Exception as e:
+        print(f"Error injecting mock data on startup: {e}")
+    finally:
+        db.close()
 app.mount(
     "/static",
     StaticFiles(directory="static"),
@@ -34,13 +170,6 @@ app.add_middleware(
 
 
 
-# Dependency to get the DB session
-def get_db():
-    db = database.SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def mask_sensitive_data(text: str) -> str:
@@ -157,91 +286,58 @@ def user_details(
     return templates.TemplateResponse(
         request=request,
         name="user_details.html",
-        context={"employee_id": employee_id, "user": user}
+        context={
+            "employee_id": employee_id,
+            "user": user
+        }
     )
 
 from sqlalchemy import func
-from database import FileMetadata, Finding
 
 @app.get("/api/user-details/{employee_id}")
-def get_user_details(employee_id: str):
-    # Group findings from _search_db for this employee
-    user_findings = [item for item in _search_db if item.get("assigned_owner") == employee_id]
-    
-    if not user_findings:
-        return {"employee_id": employee_id, "files": [], "retention_deadline": None}
-        
-    findings_by_file = {}
-    for finding in user_findings:
-        f_id = finding.get("file_id", "Unknown File")
-        if f_id not in findings_by_file:
-            findings_by_file[f_id] = []
-            
-        findings_by_file[f_id].append({
-            "finding_id": finding.get("finding_id"),
-            "category": finding.get("type"),
-            "flagged_snippet": finding.get("value"),
-            "reasoning": finding.get("context"),
-            "risk_level": finding.get("risk_level", "low"),
-            "status": "Pending" if not finding.get("owner_resolved") else "Resolved",
-            "confidence_score": 0.95
-        })
-
-    from datetime import datetime, timedelta
-    
+def get_user_details(employee_id: str, db: Session = Depends(get_db)):
+    user_files = db.query(FileMetadata).filter(FileMetadata.owner_employee_id == employee_id).all()
     file_results = []
-    earliest_deadline = None
     
-    for f_id, f_findings in findings_by_file.items():
-        # Mock retention deadline based on highest risk level in the file
-        highest_risk = "low"
-        for f in f_findings:
-            if f.get("risk_level") == "high":
-                highest_risk = "high"
-                break
-            elif f.get("risk_level") == "medium":
-                highest_risk = "medium"
-                
-        if highest_risk == "high":
-            deadline = datetime.now() + timedelta(seconds=15)
-        elif highest_risk == "medium":
-            deadline = datetime.now() + timedelta(seconds=45)
-        else:
-            deadline = datetime.now() + timedelta(days=30)
+    for file in user_files:
+        file_findings = db.query(Finding).filter(Finding.file_id == file.id).all()
+        findings_list = []
+        
+        for f in file_findings:
+            findings_list.append({
+                "finding_id": getattr(f, "finding_uid", None) or str(f.id),
+                "category": getattr(f, "category", None) or getattr(f, "type", ""),
+                "flagged_snippet": getattr(f, "flagged_snippet", None) or getattr(f, "value", ""),
+                "reasoning": getattr(f, "reasoning", None) or getattr(f, "context", ""),
+                "risk_level": getattr(f, "risk_level", "low"),
+                "status": getattr(f, "status", "Pending"),
+                "confidence_score": getattr(f, "confidence", 0.95)
+            })
             
-        if earliest_deadline is None or deadline < earliest_deadline:
-            earliest_deadline = deadline
-            
+        # Defensively handle SQLite date strings vs objects
+        ret_deadline = file.retention_deadline
+        ret_deadline_str = None
+        if ret_deadline:
+            if isinstance(ret_deadline, str):
+                ret_deadline_str = ret_deadline
+            else:
+                try:
+                    ret_deadline_str = ret_deadline.isoformat()
+                except Exception:
+                    ret_deadline_str = str(ret_deadline)
+        
+        file_path = getattr(file, "file_path", "")
+        file_name = file_path.split("/")[-1] if "/" in file_path else file_path.split("\\")[-1]
+        
         file_results.append({
-            "file_id": f_id,
-            "file_name": f_id,
-            "file_path": f"/shared_drive/{employee_id}/{f_id}",
-            "size_bytes": 1024 * 42, # Mock 42 KB
-            "last_modified": (datetime.now() - timedelta(days=5)).isoformat(),
-            "retention_deadline": deadline.isoformat(),
-            "findings": f_findings
-        })
-
-    # Add a couple of dummy CLEAN files so the user sees not everything is a violation
-    clean_files = ["project_proposal.docx", "annual_review.pdf", "meeting_notes.txt"]
-    for idx, c_file in enumerate(clean_files):
-        deadline = datetime.now() + timedelta(days=60 + idx * 10)
-        if earliest_deadline is None or deadline < earliest_deadline:
-            earliest_deadline = deadline
-            
-        file_results.append({
-            "file_id": f"clean_{idx}",
-            "file_name": c_file,
-            "file_path": f"/shared_drive/{employee_id}/{c_file}",
-            "size_bytes": 1024 * (15 + idx * 5),
-            "last_modified": (datetime.now() - timedelta(days=1)).isoformat(),
-            "retention_deadline": deadline.isoformat(),
-            "findings": [] # Empty findings array means it's a clean file!
+            "file_id": str(file.id),
+            "file_name": file_name,
+            "retention_deadline": ret_deadline_str,
+            "findings": findings_list
         })
 
     return {
         "employee_id": employee_id,
-        "retention_deadline": earliest_deadline.isoformat() if earliest_deadline else None,
         "files": file_results
     }
 
@@ -336,31 +432,190 @@ def get_employee_files(employee_id: str, db: Session = Depends(get_db)):
 @app.post("/api/employee/action")
 def process_employee_action(request: ActionRequest, db: Session = Depends(get_db)):
     # This will handle the button clicks from the frontend
+    finding = db.query(Finding).filter(Finding.id == request.file_id).first()
+    if finding:
+        finding.status = "Completed - Deleted"
+        finding.owner_resolved = True
+        db.commit()
     return {"status": "success", "message": f"Processed {request.action} on file {request.file_id}"}
 
 
+from pydantic import BaseModel as PydanticBaseModel
 
+class TriggerScanRequest(PydanticBaseModel):
+    """Optional body for POST /api/admin/trigger-scan."""
+    target_dir: str = "./mock_drive"
+    previous_scan_id: Optional[str] = None  # e.g. "scan-a1b2c3d4"
 
-import scanner # Import the file you just made
 
 @app.post("/api/admin/trigger-scan")
-def trigger_manual_scan(db: Session = Depends(get_db)):
-    # Point this to the dummy folder you created
-    target_dir = "./mock_drive" 
-    
-    # Run the delta scan!
-    results = scanner.run_delta_scan(target_dir, db)
-    
+def trigger_manual_scan(
+    req: TriggerScanRequest = TriggerScanRequest(),
+    db: Session = Depends(get_db),
+):
+    """Run a delta-aware scan on a target directory.
+
+    Flow:
+      1. Look up a previous delta state file (by scan_id or 'latest').
+      2. Run a delta comparison to categorise files as Added / Modified / Unchanged.
+      3. Execute the full AI scan pipeline on the target directory.
+      4. Filter findings to only those belonging to Added or Modified files.
+      5. Persist new findings to the SQLite database.
+      6. Save a new delta state snapshot for the next invocation.
+      7. Return a structured response with file categories + new findings.
+    """
+    from pathlib import Path as _Path
+    from src.connector import LocalSampleRepoConnector
+    from src.scanner import run_ai_scan
+    from src.delta import compare_delta, save_state
+
+    target_dir = req.target_dir
+    if not _Path(target_dir).exists():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Directory not found: {target_dir}")
+
+    connector = LocalSampleRepoConnector(repo_path=target_dir)
+
+    # ── Optional: AI parser (graceful fallback) ──────────────────────────
+    try:
+        from src.ai_parser import AIParser
+        ai_parser = AIParser()
+    except Exception:
+        ai_parser = None
+
+    # ── Delta comparison ─────────────────────────────────────────────────
+    state_dir = _Path("data/state")
+    state_dir.mkdir(parents=True, exist_ok=True)
+
+    delta_report = None
+    added_ids: set = set()
+    modified_ids: set = set()
+    removed_ids: list = []
+    unchanged_count = 0
+
+    # Resolve previous state path
+    prev_state_path = None
+    if req.previous_scan_id:
+        candidate = state_dir / f"delta_state_{req.previous_scan_id}.json"
+        if candidate.exists():
+            prev_state_path = str(candidate)
+    if prev_state_path is None:
+        latest = state_dir / "latest.json"
+        if latest.exists():
+            prev_state_path = str(latest)
+
+    if prev_state_path:
+        try:
+            delta_report = compare_delta(connector, prev_state_path)
+            added_ids = {f.file_id for f in delta_report.added}
+            modified_ids = {f.file_id for f in delta_report.modified}
+            removed_ids = delta_report.removed
+            unchanged_count = delta_report.unchanged
+        except Exception as exc:
+            # If delta fails, fall through to full scan
+            delta_report = None
+
+    # ── Run the full pipeline ────────────────────────────────────────────
+    scan_result = run_ai_scan(connector, ai_parser=ai_parser, db_session=db)
+
+    # ── Save new delta state ─────────────────────────────────────────────
+    save_state(scan_result, str(state_dir))
+
+    # ── Determine which findings are "new" ───────────────────────────────
+    if delta_report is not None:
+        changed_ids = added_ids | modified_ids
+        new_findings = [f for f in scan_result.findings if f.file_id in changed_ids]
+    else:
+        # First scan ever — everything is new
+        new_findings = scan_result.findings
+        added_ids = {f.file_id for f in connector.list_files()}
+
+    # ── Persist new findings to the DB ───────────────────────────────────
+    for f in new_findings:
+        existing = db.query(Finding).filter(Finding.finding_uid == f.finding_id).first()
+        if existing:
+            continue  # skip duplicates
+        row = Finding(
+            finding_uid=f.finding_id,
+            file_id_str=f.file_id,
+            type=f.type,
+            value=f.value,
+            field=f.field,
+            context=f.context,
+            risk_level=f.risk_level,
+            confidence=f.confidence,
+            evidence=f.evidence,
+            recommended_action=f.recommended_action,
+            assigned_owner=f.assigned_owner,
+            owner_email=f.owner_email,
+            owner_department=f.owner_department,
+            owner_resolved=f.owner_resolved,
+            escalation_target=f.escalation_target,
+            # Legacy columns
+            category=f.type,
+            confidence_score=f.confidence,
+            flagged_snippet=f.value,
+            reasoning=f.context,
+            status="Pending",
+        )
+        db.add(row)
+    db.commit()
+
+    # ── Build categorised file lists for the response ────────────────────
+    all_file_ids = {f.file_id for f in connector.list_files()}
+
+    added_files = [
+        {"file_id": fid, "status": "added"}
+        for fid in sorted(added_ids)
+    ]
+    modified_files = [
+        {"file_id": fid, "status": "modified"}
+        for fid in sorted(modified_ids)
+    ]
+    unchanged_files_list = sorted(all_file_ids - added_ids - modified_ids)
+
+    # ── Serialise only new findings for the response ─────────────────────
+    findings_out = [
+        {
+            "finding_id": f.finding_id,
+            "file_id": f.file_id,
+            "type": f.type,
+            "value": f.value,
+            "risk_level": f.risk_level,
+            "confidence": f.confidence,
+            "assigned_owner": f.assigned_owner,
+            "recommended_action": f.recommended_action,
+        }
+        for f in new_findings
+    ]
+
     return {
-        "status": "success", 
-        "message": "Scan executed", 
-        "details": results
+        "status": "success",
+        "scan_id": scan_result.scan_id,
+        "timestamp": scan_result.timestamp,
+        "is_delta": delta_report is not None,
+        "files": {
+            "added": added_files,
+            "modified": modified_files,
+            "unchanged": unchanged_files_list,
+            "removed": removed_ids,
+            "summary": {
+                "added_count": len(added_files),
+                "modified_count": len(modified_files),
+                "unchanged_count": len(unchanged_files_list),
+                "removed_count": len(removed_ids),
+            },
+        },
+        "new_findings": findings_out,
+        "new_findings_count": len(findings_out),
+        "total_findings_in_scan": len(scan_result.findings),
+        "ai_enabled": ai_parser is not None,
     }
 
 
 
 
-from database import Employee, FileMetadata, Finding
+
 
 @app.post("/api/admin/seed-dummy-data")
 def seed_dummy_data(db: Session = Depends(get_db)):
@@ -405,57 +660,6 @@ def seed_dummy_data(db: Session = Depends(get_db)):
     return {"message": "Dummy finding injected!"}
 
 
-# ── In-memory search database ──────────────────────────────────────
-_search_db: List[Dict[str, Any]] = []
-
-@app.on_event("startup")
-async def load_search_data():
-    global _search_db
-    data_file = "tests/test_cases/workflow_input_test_cases.json"
-    if os.path.exists(data_file):
-        try:
-            with open(data_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                
-                # If it's the old format (list of findings)
-                if isinstance(data, list):
-                    _search_db = data
-                # If it's the new workflow_input format
-                elif isinstance(data, dict) and "cases" in data:
-                    _search_db = []
-                    import uuid
-                    for case in data["cases"]:
-                        doc = case.get("document", {})
-                        expected = case.get("expected", {})
-                        
-                        file_id = doc.get("file_name", f"doc_{case.get('test_id')}")
-                        content = doc.get("content", "")
-                        
-                        # Generate a mock finding for each expected data type
-                        expected_types = expected.get("challenge_personal_data_present", [])
-                        
-                        # Assign some files to our dummy employee BX-21842 so the dashboard populates
-                        assigned_owner = "BX-21842" if "Employee profile file" in case.get("description", "") else "unknown"
-                        
-                        for pii_type in expected_types:
-                            finding = {
-                                "finding_id": str(uuid.uuid4()),
-                                "file_id": file_id,
-                                "type": pii_type,
-                                "value": f"[{pii_type.upper()} MOCK VALUE]",
-                                "context": content[:100] + "...",
-                                "risk_level": "high" if pii_type in ("tax_id", "iban", "credit_card") else "medium",
-                                "assigned_owner": assigned_owner,
-                                "owner_resolved": False
-                            }
-                            _search_db.append(finding)
-
-                    print(f"Loaded {len(_search_db)} findings from test cases into search DB.")
-        except Exception as e:
-            print(f"Error loading {data_file}: {e}")
-    else:
-        print(f"Warning: {data_file} not found. Search will return empty results.")
-
 from fastapi import Query as QueryParam
 
 @app.get("/api/search")
@@ -467,62 +671,57 @@ def search_findings(
     resolved: Optional[bool] = QueryParam(None),
     skip: int = QueryParam(0, ge=0),
     limit: int = QueryParam(50, ge=1, le=1000),
+    db: Session = Depends(get_db),
 ):
-    q_lower = q.lower() if q else None
-    filtered = []
+    """Search findings from the live SQLite database."""
+    query = db.query(Finding)
 
-    for item in _search_db:
-        if risk_level and item.get("risk_level", "") != risk_level:
-            continue
-        
-        if type:
-            item_type = item.get("type", "").lower()
-            category_match = False
-            if type == "passport" and ("passport" in item_type or "id" in item_type):
-                category_match = True
-            elif type == "financial" and ("iban" in item_type or "credit" in item_type or "bank" in item_type or "tax" in item_type):
-                category_match = True
-            elif type == "contact" and ("phone" in item_type or "email" in item_type or "address" in item_type):
-                category_match = True
-            elif type == "medical" and "medical" in item_type:
-                category_match = True
-            elif type == "travel" and "travel" in item_type:
-                category_match = True
-            elif type == "other":
-                if not any(kw in item_type for kw in ["passport", "id", "iban", "credit", "bank", "tax", "phone", "email", "address", "medical", "travel"]):
-                    category_match = True
-            elif type == item_type:
-                category_match = True
-                
-            if not category_match:
-                continue
+    if risk_level:
+        query = query.filter(Finding.risk_level == risk_level)
+    if type:
+        query = query.filter(Finding.type == type)
+    if owner:
+        query = query.filter(Finding.assigned_owner == owner)
+    if resolved is not None:
+        query = query.filter(Finding.owner_resolved == resolved)
+    if q:
+        q_pattern = f"%{q.lower()}%"
+        query = query.filter(
+            Finding.value.ilike(q_pattern)
+            | Finding.context.ilike(q_pattern)
+            | Finding.file_id_str.ilike(q_pattern)
+        )
 
-        if owner and item.get("assigned_owner", "") != owner:
-            continue
-        if resolved is not None and bool(item.get("owner_resolved", False)) != resolved:
-            continue
-        if q_lower:
-            val = item.get("value", "").lower()
-            ctx = item.get("context", "").lower()
-            fid = item.get("file_id", "").lower()
-            # Also search inside type for the query
-            itype = item.get("type", "").lower()
-            if q_lower not in val and q_lower not in ctx and q_lower not in fid and q_lower not in itype:
-                continue
-        filtered.append(item)
+    all_results = query.all()
+    total_count = len(all_results)
 
-    total_count = len(filtered)
-    risk_breakdown = {}
-    for res in filtered:
-        rl = res.get("risk_level", "unknown")
+    risk_breakdown: Dict[str, int] = {}
+    for res in all_results:
+        rl = res.risk_level or "unknown"
         risk_breakdown[rl] = risk_breakdown.get(rl, 0) + 1
 
-    paginated = filtered[skip : skip + limit]
+    paginated = all_results[skip : skip + limit]
+
+    results = [
+        {
+            "finding_id": row.finding_uid or str(row.id),
+            "file_id": row.file_id_str or str(row.file_id or ""),
+            "type": row.type or row.category or "",
+            "value": row.value or row.flagged_snippet or "",
+            "context": row.context or "unknown",
+            "risk_level": row.risk_level or "medium",
+            "status": row.status or "Pending",
+            "assigned_owner": row.assigned_owner or "",
+            "owner_resolved": row.owner_resolved or False,
+        }
+        for row in paginated
+    ]
 
     return {
-        "results": paginated,
+        "results": results,
         "metadata": {
             "total_count": total_count,
             "risk_breakdown": risk_breakdown,
         },
     }
+

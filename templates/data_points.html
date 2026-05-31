@@ -241,7 +241,7 @@
             
             document.getElementById('page-title').textContent = titles[filter] || 'Data Points';
             
-            const employeeId = "BX-21842";
+            const employeeId = "{{ user.employee_id }}";
             const container = document.getElementById('data-points-container');
 
             try {
@@ -258,7 +258,8 @@
                 files.forEach(file => {
                     const deadline = new Date(file.retention_deadline);
                     const findings = file.findings || [];
-                    const isClean = findings.length === 0;
+                    const hasPending = findings.some(f => f.status && f.status.toLowerCase() === "pending");
+                    const isClean = !hasPending;
 
                     if (filter === 'all') {
                         filteredFiles.push(file);
@@ -283,6 +284,8 @@
                 container.innerHTML = '';
                 filteredFiles.forEach(file => {
                     const deadline = new Date(file.retention_deadline);
+                    const findings = file.findings || [];
+                    const hasPending = findings.some(f => f.status && f.status.toLowerCase() === "pending");
                     let statusClass = 'status-info';
                     let statusText = 'Normal';
                     
@@ -292,7 +295,7 @@
                     } else if (deadline >= now && deadline <= thirtyDaysFromNow) {
                         statusClass = 'status-warning';
                         statusText = 'Expiring Soon';
-                    } else if (file.findings && file.findings.length === 0) {
+                    } else if (!hasPending) {
                         statusClass = 'status-success';
                         statusText = 'Clean / Compliant';
                     }
@@ -305,7 +308,7 @@
                     card.className = 'glass-card data-card';
                     card.style.cursor = 'pointer';
                     card.onclick = () => {
-                        window.location.href = `/user-details/${employeeId}`;
+                        window.location.href = `/user-details/${employeeId}?file_id=${file.file_id}`;
                     };
                     card.innerHTML = `
                         <div class="data-card-header">

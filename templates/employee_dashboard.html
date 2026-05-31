@@ -366,11 +366,11 @@ async function handleDelete(findingId) {
 }
 // --- Dynamic Data Overview Stats ---
 async function loadOverviewStats() {
-    const employeeId = "BX-21842";
-
+    const employeeId = "{{ user.employee_id }}";
     try {
         const response = await fetch(`/api/user-details/${employeeId}`);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) throw new Error("Backend API crashed: " + response.status);
+        
         const data = await response.json();
         const files = data.files || [];
 
@@ -383,39 +383,42 @@ async function loadOverviewStats() {
         let cleanFiles = 0;
 
         files.forEach(file => {
-            const deadline = new Date(file.retention_deadline);
-
-            if (deadline < now) {
-                deleteCandidates++;
+            // 1. Calculate Date Math safely
+            if (file.retention_deadline) {
+                const deadline = new Date(file.retention_deadline);
+                if (!isNaN(deadline)) {
+                    if (deadline < now) {
+                        deleteCandidates++;
+                    } else if (deadline >= now && deadline <= thirtyDaysFromNow) {
+                        expiringSoon++;
+                    }
+                }
             }
-            else if (deadline >= now && deadline <= thirtyDaysFromNow) {
-                expiringSoon++;
-            }
 
-            if (!file.findings || file.findings.length === 0) {
+            // 2. Calculate Clean Files safely (A file is clean if NO findings are Pending)
+            const hasPending = file.findings && file.findings.some(f => 
+                f.status && f.status.toLowerCase() === "pending"
+            );
+            if (!hasPending) {
                 cleanFiles++;
             }
         });
 
-        const complianceScore = totalFiles > 0
-            ? Math.round((cleanFiles / totalFiles) * 100)
-            : 100;
+        const complianceScore = totalFiles > 0 ? Math.round((cleanFiles / totalFiles) * 100) : 100;
 
         document.getElementById("stat-total").textContent = totalFiles;
         document.getElementById("stat-expiring").textContent = expiringSoon;
         document.getElementById("stat-delete").textContent = deleteCandidates;
         document.getElementById("stat-compliance").textContent = complianceScore + "%";
-
-        const profileCompliance = document.querySelector(".profile-grid strong:last-child");
-        if (profileCompliance) {
-            profileCompliance.textContent = complianceScore + "%";
-        }
+        const profileCompliance = document.getElementById("profile-compliance");
+        if (profileCompliance) profileCompliance.textContent = complianceScore + "%";
 
     } catch (error) {
-        console.error("Error loading overview stats:", error);
+        console.error("Data Overview Error:", error);
+        // Show ERR so the developer knows the fetch failed
         ["stat-total", "stat-expiring", "stat-delete", "stat-compliance"].forEach(id => {
             const el = document.getElementById(id);
-            if (el) el.textContent = "N/A";
+            if (el) el.textContent = "ERR";
         });
     }
 }
