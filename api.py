@@ -11,7 +11,11 @@ Run:
 
 from __future__ import annotations
 
+import json
 import logging
+import threading
+import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
@@ -25,15 +29,36 @@ from sqlalchemy.orm import Session
 
 # ── Internal pipeline imports ────────────────────────────────────────────────
 from src.connector import LocalSampleRepoConnector
-from src.scanner import run_ai_scan
+from src.scanner import run_ai_scan, run_full_scan
 from src.models import (
     Finding as FindingDC,
     ScanResult as ScanResultDC,
+    ScanMetrics as ScanMetricsDC,
+    FileRef,
     ALLOWED_REVIEW_ACTIONS,
 )
 
 # ── Database imports ─────────────────────────────────────────────────────────
-from database import get_db, Finding as FindingORM, FileMetadata as FileMetadataORM
+from database import (
+    get_db,
+    Finding as FindingORM,
+    FileMetadata as FileMetadataORM,
+    ScanJob as ScanJobORM,
+    ScanError as ScanErrorORM,
+    SessionLocal,
+)
+
+# ── Bulk DB writer ───────────────────────────────────────────────────────────
+from src.db_writer import BulkWriter
+
+# ── Optional: streaming scanner ──────────────────────────────────────────────
+try:
+    from src.streaming_scanner import run_streaming_scan as _streaming_scan
+
+    _streaming_available = True
+except Exception:
+    _streaming_scan = None
+    _streaming_available = False
 
 # ── Optional: AI parser (graceful fallback to regex-only) ────────────────────
 try:
@@ -64,6 +89,20 @@ class ScanRequest(BaseModel):
         description="Absolute or relative path to the directory containing documents to scan.",
         examples=["/data/corporate_docs", "./sample_docs"],
     )
+    mode: str = Field(
+        default="delta",
+        description="Scan mode: 'delta' or 'full'.",
+        examples=["delta", "full"],
+    )
+    ai_mode: str = Field(
+        default="layered",
+        description="AI mode: 'off', 'layered', or 'full'.",
+        examples=["off", "layered", "full"],
+    )
+    strict_hash: bool = Field(
+        default=False,
+        description="If True, compute content hash for changed candidates.",
+    )
 
 
 class ScanSummary(BaseModel):
@@ -74,6 +113,65 @@ class ScanSummary(BaseModel):
     files_scanned: int
     findings_count: int
     ai_enabled: bool
+
+
+class ScanJobOut(BaseModel):
+    """Returned by GET /api/scan/{scan_id}."""
+    scan_id: str
+    status: str
+    created_at: str
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    total_files: int = 0
+    files_scanned: int = 0
+    files_skipped: int = 0
+    files_error: int = 0
+    total_findings: int = 0
+    error_message: Optional[str] = None
+
+
+class ScanJobStats(BaseModel):
+    """Returned by GET /api/scan/{scan_id}/stats."""
+    scan_id: str
+    status: str
+    discovery_time_ms: float = 0.0
+    delta_time_ms: float = 0.0
+    parse_time_ms: float = 0.0
+    regex_time_ms: float = 0.0
+    db_write_time_ms: float = 0.0
+    ai_time_ms: float = 0.0
+    total_time_ms: float = 0.0
+    files_per_second: float = 0.0
+    skip_ratio: float = 0.0
+    peak_memory_mb: float = 0.0
+
+
+class ScanErrorItem(BaseModel):
+    """Single scan-level error."""
+    file_id: str
+    file_name: str
+    error_type: str
+    message: str
+
+
+class ScanErrorsResponse(BaseModel):
+    """Returned by GET /api/scan/{scan_id}/errors."""
+    scan_id: str
+    total_errors: int
+    errors: list[ScanErrorItem]
+
+
+class ScanJobsListItem(BaseModel):
+    """Single item in scan job listing."""
+    scan_id: str
+    status: str
+    created_at: str
+    files_scanned: int = 0
+
+
+class ScanJobsListResponse(BaseModel):
+    """Returned by GET /api/scans."""
+    scans: list[ScanJobsListItem]
 
 
 # ── Findings ─────────────────────────────────────────────────────────────────
@@ -149,6 +247,113 @@ class ReviewResponse(BaseModel):
     action: str
     reviewer: str
     reviewed_at: str
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Background scan runner
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _run_background_scan(
+    scan_id: str,
+    folder_path: str,
+    mode: str,
+    ai_mode: str,
+    strict_hash: bool,
+) -> None:
+    """Execute a scan in a background thread and update the ScanJob record."""
+    db = SessionLocal()
+    t_start = time.perf_counter()
+
+    try:
+        # ── Update job to running ──────────────────────────────────────
+        job = db.query(ScanJobORM).filter(ScanJobORM.scan_id == scan_id).first()
+        if not job:
+            logger.error("ScanJob %s not found in DB", scan_id)
+            return
+        job.status = "running"
+        job.started_at = datetime.now().isoformat()
+        db.commit()
+
+        # ── Set up connector and bulk writer ────────────────────────────
+        connector = LocalSampleRepoConnector(repo_path=str(folder_path))
+        writer = BulkWriter(db, batch_size=500)
+
+        # ── Persist FileMetadata via BulkWriter (no duplicate list_files call) ──
+        files = connector.list_files()
+        job.total_files = len(files)
+        db.commit()
+
+        for file_meta in files:
+            fr = FileRef(
+                file_id=file_meta.file_id,
+                file_name=file_meta.file_name,
+                path_or_uri=file_meta.path,
+                source_type="local",
+                size_bytes=file_meta.size_bytes,
+                last_modified=file_meta.last_modified,
+                etag_or_version="",
+            )
+            writer.add_file_state(fr, content_hash=file_meta.content_hash)
+
+        # ── Run the scanner ──────────────────────────────────────────────
+        ai_parser = _ai_parser if ai_mode != "off" else None
+        result: ScanResultDC = run_ai_scan(connector, ai_parser=ai_parser, db_session=db)
+
+        # ── Persist findings via BulkWriter ──────────────────────────────
+        for f in result.findings:
+            writer.add_finding(f)
+
+        # ── Flush remaining records ──────────────────────────────────────
+        rows = writer.flush()
+        db.commit()
+
+        total_time_ms = (time.perf_counter() - t_start) * 1000
+
+        # ── Store metrics ────────────────────────────────────────────────
+        metrics = {
+            "total_time_ms": total_time_ms,
+            "db_write_time_ms": writer.total_write_time_ms,
+            "parse_time_ms": 0.0,
+            "regex_time_ms": 0.0,
+        }
+        files_per_second = result.files_scanned / (total_time_ms / 1000) if total_time_ms > 0 else 0
+
+        # ── Update job as completed ──────────────────────────────────────
+        job.status = "completed"
+        job.completed_at = datetime.now().isoformat()
+        job.total_files = result.files_scanned
+        job.files_scanned = result.files_scanned
+        job.files_skipped = 0
+        job.files_error = 0
+        job.total_findings = len(result.findings)
+        job.metrics_json = json.dumps(metrics)
+        db.commit()
+
+        logger.info(
+            "Background scan %s complete: %d files, %d findings in %.0f ms (DB write: %.0f ms, %d flushes, %d rows)",
+            scan_id,
+            result.files_scanned,
+            len(result.findings),
+            total_time_ms,
+            writer.total_write_time_ms,
+            writer.flush_count,
+            writer.total_rows_written,
+        )
+
+    except Exception as exc:
+        logger.exception("Background scan %s failed", scan_id)
+        try:
+            job = db.query(ScanJobORM).filter(ScanJobORM.scan_id == scan_id).first()
+            if job:
+                job.status = "failed"
+                job.error_message = str(exc)
+                job.completed_at = datetime.now().isoformat()
+                db.commit()
+        except Exception:
+            logger.exception("Failed to update ScanJob status for %s", scan_id)
+    finally:
+        db.close()
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Helper: persist a pipeline Finding dataclass → SQLAlchemy row
@@ -238,13 +443,12 @@ app.add_middleware(
 
 @app.post("/api/scan", response_model=ScanSummary)
 async def trigger_scan(req: ScanRequest, db: Session = Depends(get_db)):
-    """Run the full GDPR scan pipeline on a given folder.
+    """Trigger a GDPR scan on a given folder (non-blocking).
 
     1. Validates the folder path exists and is readable.
-    2. Initialises LocalSampleRepoConnector with the provided path.
-    3. Executes run_ai_scan (falls back to regex-only if no API key).
-    4. Persists all findings to the SQLite database.
-    5. Returns a concise summary for the UI.
+    2. Creates a ScanJob record with status="pending".
+    3. Returns scan_id immediately.
+    4. Scan runs in a background thread.
     """
 
     # ── Validate folder ──────────────────────────────────────────────────────
@@ -260,57 +464,167 @@ async def trigger_scan(req: ScanRequest, db: Session = Depends(get_db)):
             detail=f"Path is not a directory: {folder}",
         )
 
-    logger.info("Scan triggered for folder: %s", folder)
-
-    # ── Run pipeline ─────────────────────────────────────────────────────────
-    try:
-        connector = LocalSampleRepoConnector(repo_path=str(folder))
-        result: ScanResultDC = run_ai_scan(connector, ai_parser=_ai_parser, db_session=db)
-    except Exception as exc:
-        logger.exception("Pipeline error during scan")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Scan pipeline failed: {exc}",
-        )
-
-    # ── Persist to SQLite ────────────────────────────────────────────────────
-    from database import FileMetadata
-    from datetime import datetime, timedelta
-    
-    for file_meta in connector.list_files():
-        existing_fm = db.query(FileMetadata).filter(FileMetadata.file_path == file_meta.path).first()
-        if not existing_fm:
-            try:
-                last_mod = datetime.fromisoformat(file_meta.last_modified)
-            except:
-                last_mod = datetime.now()
-            new_fm = FileMetadata(
-                file_path=file_meta.path,
-                owner_employee_id="BX-17335",
-                size_bytes=file_meta.size_bytes,
-                file_hash=file_meta.content_hash,
-                last_modified=last_mod,
-                retention_deadline=datetime.now() + timedelta(days=200)
-            )
-            db.add(new_fm)
-
-    for f in result.findings:
-        _persist_finding(db, f)
+    # ── Create scan job ──────────────────────────────────────────────────────
+    scan_id = f"scan-{uuid.uuid4().hex[:8]}"
+    now = datetime.now().isoformat()
+    options = {
+        "mode": req.mode,
+        "ai_mode": req.ai_mode,
+        "strict_hash": req.strict_hash,
+    }
+    job = ScanJobORM(
+        scan_id=scan_id,
+        status="pending",
+        options_json=json.dumps(options),
+        created_at=now,
+    )
+    db.add(job)
     db.commit()
 
-    logger.info(
-        "Scan complete — %d files, %d findings (AI %s)",
-        result.files_scanned,
-        len(result.findings),
-        "on" if _ai_parser else "off",
+    logger.info("Scan job created: %s for folder: %s (mode=%s, ai=%s)", scan_id, folder, req.mode, req.ai_mode)
+
+    # ── Launch background scan ───────────────────────────────────────────────
+    thread = threading.Thread(
+        target=_run_background_scan,
+        args=(scan_id, str(folder), req.mode, req.ai_mode, req.strict_hash),
+        daemon=True,
     )
+    thread.start()
 
     return ScanSummary(
-        scan_id=result.scan_id,
-        timestamp=result.timestamp,
-        files_scanned=result.files_scanned,
-        findings_count=len(result.findings),
+        scan_id=scan_id,
+        timestamp=now,
+        files_scanned=0,
+        findings_count=0,
         ai_enabled=_ai_parser is not None,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GET /api/scan/{scan_id} — scan job status
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/scan/{scan_id}", response_model=ScanJobOut)
+async def get_scan_status(scan_id: str, db: Session = Depends(get_db)):
+    """Return the current status and stats for a scan job."""
+    job = db.query(ScanJobORM).filter(ScanJobORM.scan_id == scan_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Scan job '{scan_id}' not found.")
+
+    return ScanJobOut(
+        scan_id=job.scan_id,
+        status=job.status,
+        created_at=job.created_at or "",
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        total_files=job.total_files or 0,
+        files_scanned=job.files_scanned or 0,
+        files_skipped=job.files_skipped or 0,
+        files_error=job.files_error or 0,
+        total_findings=job.total_findings or 0,
+        error_message=job.error_message,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GET /api/scan/{scan_id}/stats — detailed timing metrics
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/scan/{scan_id}/stats", response_model=ScanJobStats)
+async def get_scan_stats(scan_id: str, db: Session = Depends(get_db)):
+    """Return detailed timing metrics for a scan job."""
+    job = db.query(ScanJobORM).filter(ScanJobORM.scan_id == scan_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Scan job '{scan_id}' not found.")
+
+    # Parse stored metrics JSON
+    metrics = {}
+    try:
+        metrics = json.loads(job.metrics_json or "{}")
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    total_time_ms = metrics.get("total_time_ms", 0.0)
+    files_scanned = job.files_scanned or 0
+
+    return ScanJobStats(
+        scan_id=job.scan_id,
+        status=job.status,
+        discovery_time_ms=metrics.get("discovery_time_ms", 0.0),
+        delta_time_ms=metrics.get("delta_time_ms", 0.0),
+        parse_time_ms=metrics.get("parse_time_ms", 0.0),
+        regex_time_ms=metrics.get("regex_time_ms", 0.0),
+        db_write_time_ms=metrics.get("db_write_time_ms", 0.0),
+        ai_time_ms=metrics.get("ai_time_ms", 0.0),
+        total_time_ms=total_time_ms,
+        files_per_second=files_scanned / (total_time_ms / 1000) if total_time_ms > 0 else 0.0,
+        skip_ratio=metrics.get("skip_ratio", 0.0),
+        peak_memory_mb=metrics.get("peak_memory_mb", 0.0),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GET /api/scan/{scan_id}/errors — file-level errors
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/scan/{scan_id}/errors", response_model=ScanErrorsResponse)
+async def get_scan_errors(
+    scan_id: str,
+    skip: int = Query(default=0, ge=0, description="Pagination offset."),
+    limit: int = Query(default=50, ge=1, le=500, description="Page size."),
+    db: Session = Depends(get_db),
+):
+    """Return paginated list of file-level errors for a scan."""
+    job = db.query(ScanJobORM).filter(ScanJobORM.scan_id == scan_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Scan job '{scan_id}' not found.")
+
+    query = db.query(ScanErrorORM).filter(ScanErrorORM.scan_id == scan_id)
+    total = query.count()
+    errors = query.offset(skip).limit(limit).all()
+
+    return ScanErrorsResponse(
+        scan_id=scan_id,
+        total_errors=total,
+        errors=[
+            ScanErrorItem(
+                file_id=e.file_id or "",
+                file_name=e.file_name or "",
+                error_type=e.error_type or "unknown",
+                message=e.message or "",
+            )
+            for e in errors
+        ],
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GET /api/scans — list recent scan jobs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/scans", response_model=ScanJobsListResponse)
+async def list_scans(
+    limit: int = Query(default=20, ge=1, le=100, description="Number of recent scans to return."),
+    db: Session = Depends(get_db),
+):
+    """List recent scan jobs, newest first."""
+    jobs = (
+        db.query(ScanJobORM)
+        .order_by(ScanJobORM.id.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return ScanJobsListResponse(
+        scans=[
+            ScanJobsListItem(
+                scan_id=j.scan_id,
+                status=j.status,
+                created_at=j.created_at or "",
+                files_scanned=j.files_scanned or 0,
+            )
+            for j in jobs
+        ],
     )
 
 
