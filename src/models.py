@@ -240,6 +240,7 @@ class FileScanResult:
     owner_hints: dict = field(default_factory=dict)
     parse_time_ms: float = 0.0
     regex_time_ms: float = 0.0
+    io_time_ms: float = 0.0
     error: str | None = None  # If set, this file had a non-fatal error
 
     @property
