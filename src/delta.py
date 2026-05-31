@@ -2,10 +2,13 @@
 
 - save_state(): persist a ScanResult as a DeltaState JSON snapshot.
 - compare_delta(): diff current connector state against a saved state.
+- compute_fingerprint(): fast metadata-based fingerprint (no I/O).
+- compute_content_hash(): SHA-256 hash of file contents (for strict_hash mode).
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +19,7 @@ from .models import (
     DeltaState,
     DeltaReport,
     FileMetadata,
+    FileRef,
     FileSnapshot,
 )
 
@@ -131,3 +135,36 @@ def _delta_state_to_dict(state: DeltaState) -> dict:
             for fid, fs in state.files.items()
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Fingerprint helpers (Agent 1)
+# ---------------------------------------------------------------------------
+
+def compute_fingerprint(file_ref: FileRef) -> str:
+    """Fast metadata-based fingerprint — no I/O, no content hash.
+
+    Uses source_type + file_id + size + last_modified + etag_or_version.
+    Changing any of these will produce a different fingerprint.
+    """
+    return (
+        f"{file_ref.source_type}:{file_ref.file_id}:"
+        f"{file_ref.size_bytes}:{file_ref.last_modified}:"
+        f"{file_ref.etag_or_version}"
+    )
+
+
+def compute_content_hash(file_ref: FileRef, connector: Connector) -> str:
+    """SHA-256 hash of file contents. Only used when strict_hash=True.
+
+    Opens the file via connector.open_file() and reads in chunks to
+    avoid loading the entire file into memory.
+    """
+    hasher = hashlib.sha256()
+    fh = connector.open_file(file_ref)
+    try:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            hasher.update(chunk)
+    finally:
+        fh.close()
+    return hasher.hexdigest()
