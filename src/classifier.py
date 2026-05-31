@@ -77,12 +77,22 @@ _TYPE_KEYWORDS: dict[str, list[str]] = {
 }
 
 
+_SEMANTIC_PATTERNS: list[tuple[str, str, str, str]] = [
+    # (regex, type, risk_level, action)
+    (r'(?i)\b(?:call|phone|contact(?:ed)?)\s+(?:[A-Z][a-z]+\s+)?(?:at|on)\s+([\d\-\+\(\)\s]{7,20})\b', "phone", "medium", "mask"),
+    (r'(?i)\b(?:password|pwd|passcode|secret)\s*[:=]\s*([^\s]{5,20})\b', "password", "high", "mask"),
+    (r'(?i)\b(?:ssn|social security)\s*[:=]?\s*([\d\-]{9,11})\b', "ssn", "high", "delete"),
+]
+
 def extract_entities(
     text: str,
     pages: list[PageContent],
     external_findings: list[Finding] | None = None,
 ) -> list[Finding]:
-    """Scan text for PII/risk entities using regex patterns.
+    """Scan text for PII/risk entities using a Two-Pass pipeline.
+
+    Pass 1 (High-Speed Regex): Standard PII extraction.
+    Pass 2 (Lightweight NLP/Semantic): Contextual checks on remaining text.
 
     Args:
         text: Full concatenated document text.
@@ -98,6 +108,9 @@ def extract_entities(
 
     # Build page text lookup for context extraction
     full_text = "\n".join(p.text for p in pages)
+    
+    # ── Pass 1: High-Speed Regex ──
+    matched_ranges = [] # Store intervals of matched text
 
     for pattern, ftype, risk, action in _PATTERNS:
         for match in re.finditer(pattern, full_text, re.MULTILINE):
@@ -109,10 +122,12 @@ def extract_entities(
             if not value:
                 continue
 
+            matched_ranges.append((match.start(), match.end()))
+
             # Extract surrounding context (up to 80 chars)
-            start = max(0, match.start() - 40)
-            end = min(len(full_text), match.end() + 40)
-            ctx = full_text[start:end].replace("\n", " ")
+            start_ctx = max(0, match.start() - 40)
+            end_ctx = min(len(full_text), match.end() + 40)
+            ctx = full_text[start_ctx:end_ctx].replace("\n", " ")
 
             # Determine which field name the value belongs to (from match groups)
             field_name = ""
@@ -136,12 +151,68 @@ def extract_entities(
                 confidence=1.0,
                 evidence=f"Regex pattern matched: {pattern}",
                 recommended_action=action,
+                is_flagged=True,
+                flag_type="Regex_Match"
+            ))
+
+    # ── Prepare for Pass 2: Mask out Regex Matches (O(N)) ──
+    # Merge overlapping intervals to minimize masking work
+    matched_ranges.sort()
+    merged_ranges = []
+    for r in matched_ranges:
+        if not merged_ranges:
+            merged_ranges.append(r)
+        else:
+            last = merged_ranges[-1]
+            if r[0] <= last[1]:
+                merged_ranges[-1] = (last[0], max(last[1], r[1]))
+            else:
+                merged_ranges.append(r)
+
+    # Convert to list of chars to mask out ranges (O(N) operation)
+    text_chars = list(full_text)
+    for start_idx, end_idx in merged_ranges:
+        for i in range(start_idx, end_idx):
+            text_chars[i] = ' '
+    
+    remaining_text = "".join(text_chars)
+
+    # ── Pass 2: Lightweight Semantic / Contextual Check ──
+    # Runs ONLY on the text that wasn't already caught by standard Regex
+    for pattern, ftype, risk, action in _SEMANTIC_PATTERNS:
+        for match in re.finditer(pattern, remaining_text, re.MULTILINE):
+            value = match.group(1).strip()
+            if not value:
+                continue
+                
+            start_ctx = max(0, match.start() - 40)
+            end_ctx = min(len(remaining_text), match.end() + 40)
+            ctx = remaining_text[start_ctx:end_ctx].replace("\n", " ")
+            
+            dedup_key = (ftype, value)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+
+            findings.append(Finding(
+                finding_id="",
+                file_id="",
+                type=ftype,
+                value=value,
+                field=ftype,
+                context=ctx,
+                risk_level=risk,
+                confidence=0.8,
+                evidence=f"Semantic context match",
+                recommended_action=action,
+                is_flagged=True,
+                flag_type="Semantic_Match"
             ))
 
     # Merge external findings
     if external_findings:
         for f in external_findings:
-            key = (f.type, f.value, f.file_id)
+            key = (f.type, f.value)
             if key not in seen:
                 seen.add(key)
                 findings.append(f)

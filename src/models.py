@@ -83,6 +83,8 @@ class Finding:
     owner_department: str = ""
     owner_resolved: bool = False
     escalation_target: str = ""
+    is_flagged: bool = True
+    flag_type: str = "Regex_Match"
 
     def __post_init__(self):
         if not self.finding_id:
