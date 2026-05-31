@@ -1,7 +1,44 @@
 """Unified connector interface and local demo implementation.
 
-ABC Connector defines 5 methods that any source must implement.
-LocalSampleRepoConnector reads PDFs from a local directory.
+======================================================================
+CONNECTOR CONTRACT — The data-source abstraction for all scan engines.
+======================================================================
+
+Connector (ABC) defines 6 abstract methods that every data source must
+implement:
+
+    list_files()          -> list[FileMetadata]
+        Batch discovery — returns full metadata with content hashes.
+
+    iter_files()          -> Iterator[FileRef]
+        Streaming discovery — yields lightweight FileRef objects.
+        Does NOT compute content hashes. Preferred for large repos.
+
+    get_file_metadata(id) -> FileMetadata | None
+        Single-file metadata lookup.
+
+    download_file(id)     -> bytes
+        Full in-memory download. Used by run_full_scan().
+
+    open_file(ref)        -> BinaryIO
+        Streaming file access. Used by run_streaming_scan().
+        Caller must close the returned handle.
+
+    get_owner_hints(id)   -> dict
+        Returns {name, email, department, site_owner, master_of_data}.
+
+    get_change_token()    -> str
+        Opaque token representing source state. Used for coarse
+        change detection in delta scans.
+
+Implementations:
+    LocalSampleRepoConnector  — reads PDFs from a local directory.
+    Google Drive connector    — src/google_drive.py (cloud).
+    Microsoft Graph connector — src/microsoft_graph.py (cloud).
+
+This abstraction MUST NOT be broken. All scan engines depend on it.
+Any new scan path MUST accept a Connector instance as its data source.
+======================================================================
 """
 
 from __future__ import annotations

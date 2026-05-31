@@ -7,6 +7,24 @@ Endpoints:
 
 Run:
     uvicorn api:app --reload --port 8000
+
+FUTURE REFACTOR NOTE (Agent 4 — Scan Engine Consolidation):
+    The scan orchestration in _run_background_scan() (line ~262) and the
+    upload handler (line ~650) could delegate to src.scan_service.scan_folder()
+    instead of directly calling run_ai_scan(). This would:
+      - Unify batch/streaming path selection in one place.
+      - Make it easier to swap between "full", "ai", "layered", and "streaming".
+      - Reduce duplicated connector setup + AI parser resolution.
+    Currently, both paths call run_ai_scan() directly. Switching to
+    scan_service would look like:
+
+        from src.scan_service import scan_folder
+        result = scan_folder(folder_path=str(folder_path), mode="ai",
+                             ai_mode=ai_mode, db_session=db)
+
+    Do NOT switch yet — this is documented for a future refactor step.
+    Any switch must preserve ScanJob tracking, BulkWriter usage, and
+    the current /api/scan response contract exactly.
 """
 
 from __future__ import annotations

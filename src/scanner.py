@@ -1,6 +1,68 @@
-"""Full scan engine — orchestrates parse + classify + assign.
+"""Scan engine — orchestrates parse + classify + owner assignment.
 
-Single entry point: run_full_scan(connector) -> ScanResult.
+======================================================================
+SCAN ENTRY POINTS — Which one to use?
+======================================================================
+
+PRODUCTION PATH (used by api.py and main.py):
+    run_ai_scan(connector, ai_parser, db_session=...) -> ScanResult
+    - Called by api.py POST /api/scan and POST /api/upload
+    - Called by main.py POST /api/admin/trigger-scan
+    - Internally calls run_full_scan(), then enriches with AI.
+    - Returns ScanResult with findings accumulated in memory.
+    - THIS is the recommended production entry point.
+
+BATCH PATH (used by CLI and as internal building block):
+    run_full_scan(connector, db_session=...) -> ScanResult
+    - Called by src/pipeline.py CLI (`full-scan` subcommand).
+    - Called internally by run_ai_scan() as the first step.
+    - Regex-only: no AI enrichment.
+    - Returns ScanResult with findings accumulated in memory.
+
+STREAMING PATH (high-throughput, memory-efficient):
+    run_streaming_scan(connector, file_refs, options, on_result=...)
+        -> ScanMetrics
+    - Defined in src/streaming_scanner.py.
+    - Uses ProcessPoolExecutor for PDF parsing.
+    - Emits FileScanResult one at a time via on_result callback.
+    - NEVER accumulates findings in memory.
+    - Imported by api.py but NOT yet called by any production endpoint.
+    - Useful for large repositories where memory is a concern.
+
+LAYERED PATH (streaming + async AI, experimental):
+    run_layered_scan(connector, file_refs, options, ai_parser, ...)
+        -> (ScanMetrics, AIQueue)
+    - Runs run_streaming_scan() with AI off, then enqueues files
+      for async AI enrichment via AIQueue.
+    - Returns metrics immediately; AI results available later.
+    - Defined in src/scanner.py but NEVER called by any endpoint.
+    - Experimental / demo path. Not production-integrated.
+
+DELTA PATH (skip unchanged files):
+    DeltaPlanner (in src/delta_planner.py) — compare metadata fingerprints.
+    src/delta.py — save_state() / compare_delta() with content hashes.
+    - Used by main.py POST /api/admin/trigger-scan for delta comparison.
+    - Used by src/pipeline.py CLI (`delta-scan` subcommand).
+
+LEGACY PATH (DO NOT USE for new code):
+    Root scanner.py — standalone delta scan script.
+    - Walks filesystem, computes MD5, writes FileMetadata to DB directly.
+    - Uses os.walk (no connector abstraction).
+    - Hardcodes owner_employee_id = "BX-21842".
+    - Superseded by src/scanner.py + src/delta.py.
+
+EXPERIMENTAL PATH (not wired into main apps):
+    pii_filter/pipeline.py — FastFilterPipeline (standalone prototype).
+    - Own Pydantic models, own regex patterns, own state manager.
+    - Not imported by main.py or api.py.
+    - Duplicated regex patterns from src/classifier.py.
+
+======================================================================
+CONTRACT NOTE:
+    All active scan functions accept a Connector (ABC) as their data
+    source. The connector contract is defined in src/connector.py.
+    Implementations: LocalSampleRepoConnector, Google Drive, MS Graph.
+======================================================================
 """
 
 from __future__ import annotations
