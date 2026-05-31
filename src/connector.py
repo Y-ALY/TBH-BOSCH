@@ -11,8 +11,9 @@ from datetime import datetime
 from pathlib import Path
 import hashlib
 import json
+from typing import BinaryIO, Iterator
 
-from .models import FileMetadata
+from .models import FileMetadata, FileRef
 
 
 class Connector(ABC):
@@ -24,6 +25,15 @@ class Connector(ABC):
         ...
 
     @abstractmethod
+    def iter_files(self) -> Iterator[FileRef]:
+        """Streaming file discovery — yields lightweight FileRef objects.
+
+        Unlike list_files(), this does NOT compute content hashes and does
+        NOT accumulate results in memory. Use this for large repositories.
+        """
+        ...
+
+    @abstractmethod
     def get_file_metadata(self, file_id: str) -> FileMetadata | None:
         """Return metadata for a single file, or None if not found."""
         ...
@@ -31,6 +41,14 @@ class Connector(ABC):
     @abstractmethod
     def download_file(self, file_id: str) -> bytes:
         """Return raw bytes of the given file."""
+        ...
+
+    @abstractmethod
+    def open_file(self, file_ref: FileRef) -> BinaryIO:
+        """Stream a file's contents instead of loading entirely in memory.
+
+        Returns a readable binary file object. Callers must close it.
+        """
         ...
 
     @abstractmethod
@@ -101,6 +119,31 @@ class LocalSampleRepoConnector(Connector):
         return files
 
     # ------------------------------------------------------------------
+    # iter_files (streaming, no content hash)
+    # ------------------------------------------------------------------
+
+    def iter_files(self) -> Iterator[FileRef]:
+        """Yield lightweight FileRef objects without computing content hashes."""
+        if not self.repo_path.exists():
+            return
+
+        for pdf_path in sorted(self.repo_path.glob("*.pdf")):
+            try:
+                stat = pdf_path.stat()
+                etag = f"mtime:{stat.st_mtime:.0f}:size:{stat.st_size}"
+                yield FileRef(
+                    file_id=f"local:{pdf_path.name}",
+                    file_name=pdf_path.name,
+                    path_or_uri=str(pdf_path),
+                    source_type="local",
+                    size_bytes=stat.st_size,
+                    last_modified=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    etag_or_version=etag,
+                )
+            except OSError:
+                continue
+
+    # ------------------------------------------------------------------
     # get_file_metadata
     # ------------------------------------------------------------------
 
@@ -131,6 +174,18 @@ class LocalSampleRepoConnector(Connector):
             raise FileNotFoundError(f"Cannot resolve file_id: {file_id}")
         pdf_path = self.repo_path / file_name
         return pdf_path.read_bytes()
+
+    # ------------------------------------------------------------------
+    # open_file (streaming)
+    # ------------------------------------------------------------------
+
+    def open_file(self, file_ref: FileRef) -> BinaryIO:
+        """Open a file for streaming reads. Caller must close the returned handle."""
+        file_name = self._resolve_file_id(file_ref.file_id)
+        if file_name is None:
+            raise FileNotFoundError(f"Cannot resolve file_id: {file_ref.file_id}")
+        pdf_path = self.repo_path / file_name
+        return open(pdf_path, "rb")
 
     # ------------------------------------------------------------------
     # get_owner_hints

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from typing import Optional
+from typing import Optional, BinaryIO, Iterator
 import uuid
 
 
@@ -199,3 +199,99 @@ class DeltaReport:
     @property
     def needs_full_scan(self) -> bool:
         return len(self.added) > 0 or len(self.modified) > 0
+
+
+# ---------------------------------------------------------------------------
+# Optimized pipeline models (Agent 0 — Shared Contracts)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class FileRef:
+    """Lightweight file reference — used everywhere instead of full FileMetadata."""
+    file_id: str
+    file_name: str
+    path_or_uri: str
+    source_type: str          # "local", "onedrive", "sharepoint", "googledrive"
+    size_bytes: int
+    last_modified: str        # ISO-8601
+    etag_or_version: str      # eTag, cTag, version, or mtime-based token
+    mime_type: str = "application/pdf"
+
+
+@dataclass
+class ScanOptions:
+    """Configuration for a scan run."""
+    mode: str = "delta"        # "delta" | "full"
+    strict_hash: bool = False  # If True, compute content hash for changed candidates
+    ai_mode: str = "layered"   # "off" | "layered" | "full"
+    max_workers: int | None = None
+
+
+@dataclass
+class FileScanResult:
+    """Per-file scan output — emitted one at a time, never accumulated in a list."""
+    file_ref: FileRef
+    document_type: str = "unknown"
+    page_count: int = 0
+    text_length: int = 0
+    needs_ocr: bool = False
+    findings: list = field(default_factory=list)  # list[Finding]
+    fields: dict = field(default_factory=dict)
+    owner_hints: dict = field(default_factory=dict)
+    parse_time_ms: float = 0.0
+    regex_time_ms: float = 0.0
+    error: str | None = None  # If set, this file had a non-fatal error
+
+    @property
+    def is_error(self) -> bool:
+        return self.error is not None
+
+
+@dataclass
+class FileScanError:
+    """Non-fatal per-file error."""
+    file_id: str
+    file_name: str
+    error_type: str   # "parse_error", "permission_denied", "download_error", "timeout"
+    message: str
+
+
+@dataclass
+class ScanMetrics:
+    """Aggregated scan performance metrics."""
+    scan_id: str = ""
+    total_files: int = 0
+    files_queued: int = 0
+    files_skipped: int = 0
+    files_scanned: int = 0
+    files_error: int = 0
+    total_findings: int = 0
+    # Layer timings (ms)
+    discovery_time_ms: float = 0.0
+    delta_time_ms: float = 0.0
+    io_time_ms: float = 0.0
+    parse_time_ms: float = 0.0
+    regex_time_ms: float = 0.0
+    db_write_time_ms: float = 0.0
+    ai_time_ms: float = 0.0
+    total_time_ms: float = 0.0
+    # Memory
+    peak_memory_mb: float = 0.0
+    # Throughput
+    files_per_second: float = 0.0
+    mb_per_second: float = 0.0
+    # Ratios
+    skip_ratio: float = 0.0
+
+
+@dataclass
+class ScanJob:
+    """Long-running scan job tracked in DB."""
+    scan_id: str
+    status: str = "pending"   # pending | running | completed | failed | interrupted
+    options: dict = field(default_factory=dict)
+    created_at: str = ""
+    started_at: str | None = None
+    completed_at: str | None = None
+    metrics: ScanMetrics | None = None
+    error_count: int = 0
