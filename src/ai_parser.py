@@ -152,10 +152,10 @@ class AIParser:
     """Send document text to OpenRouter LLM for GDPR analysis.
 
     Requires OPENROUTER_API_KEY env var.
-    Optional: OPENROUTER_MODEL (default: anthropic/claude-sonnet-4)
+    Optional: OPENROUTER_MODEL (default: openai/gpt-oss-safeguard-20b)
     """
 
-    DEFAULT_MODEL = "anthropic/claude-sonnet-4"
+    DEFAULT_MODEL = "openai/gpt-oss-safeguard-20b"
     API_BASE = "https://openrouter.ai/api/v1"
 
     def __init__(self, model: str | None = None, api_key: str | None = None):

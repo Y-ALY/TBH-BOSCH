@@ -31,7 +31,7 @@ from src.models import FileRef, FileScanResult, ScanOptions
 # ---------------------------------------------------------------------------
 
 def _demo_repo() -> str:
-    return os.path.join(os.path.dirname(__file__), "..", "demo_drive_rich")
+    return os.path.join(os.path.dirname(__file__), "..", "strict_drive")
 
 
 def _make_fileref(
@@ -56,7 +56,7 @@ def _make_fileref(
 # ---------------------------------------------------------------------------
 
 def test_discover_local_finds_pdfs():
-    """discover_local() should find PDF files in demo_drive_rich."""
+    """discover_local() should find PDF files in strict_drive."""
     files = list(discover_local(_demo_repo()))
     assert len(files) > 1000, f"Expected >1000 PDFs, got {len(files)}"
     for f in files[:5]:

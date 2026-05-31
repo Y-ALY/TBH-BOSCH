@@ -57,7 +57,7 @@ class OpenRouterClient:
         model: str | None = None,
     ) -> None:
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY", "")
-        self.model = model or os.getenv("OPENROUTER_MODEL", "openai/gpt-4o")
+        self.model = model or os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-safeguard-20b")
 
         if not self.api_key:
             logger.warning(

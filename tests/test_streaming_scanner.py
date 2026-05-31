@@ -29,7 +29,7 @@ from src.streaming_scanner import run_streaming_scan
 # ---------------------------------------------------------------------------
 
 def _demo_repo_path() -> str:
-    return os.path.join(os.path.dirname(__file__), "..", "demo_drive_rich")
+    return os.path.join(os.path.dirname(__file__), "..", "strict_drive")
 
 
 # ---------------------------------------------------------------------------

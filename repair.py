@@ -6,7 +6,7 @@ def repair_db():
     db = SessionLocal()
     
     # 1. Load hints
-    with open("demo_drive_rich/owner_hints.json", "r") as f:
+    with open("strict_drive/owner_hints.jsonl", "r") as f:
         hints = json.load(f)
         
     # 2. Get email to employee_id mapping
@@ -17,7 +17,7 @@ def repair_db():
     files = db.query(FileMetadata).all()
     updated = 0
     for f in files:
-        # f.file_path is like /Users/.../demo_drive_rich/filename.pdf
+        # f.file_path is like /Users/.../strict_drive/filename.pdf
         filename = Path(f.file_path).name
         hint = hints.get(filename, {})
         email = hint.get("email")

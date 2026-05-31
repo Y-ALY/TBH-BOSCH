@@ -4,7 +4,7 @@ demo_ingest.py – Demonstrates the File Ingestion → GDPR Scan pipeline.
 
 Run:
     python demo_ingest.py ./documents      # scan a specific folder
-    python demo_ingest.py                  # uses ./demo_drive_rich by default
+    python demo_ingest.py                  # uses ./strict_drive by default
 
 This script:
     1. Reads .pdf, .docx, and .txt files from a target directory.
@@ -33,7 +33,7 @@ log = logging.getLogger("demo_ingest")
 
 def main() -> None:
     # Determine target folder from CLI args or default
-    target_dir = sys.argv[1] if len(sys.argv) > 1 else "./demo_drive_rich"
+    target_dir = sys.argv[1] if len(sys.argv) > 1 else "./strict_drive"
 
     log.info("=" * 60)
     log.info("🚀 GDPR File Ingestion + PII Scan")

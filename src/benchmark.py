@@ -6,10 +6,10 @@ objective performance data. Works without AI API keys.
 Usage:
     from src.benchmark import benchmark_legacy, run_comparison, print_report
 
-    result = benchmark_legacy("./demo_drive_rich", limit=100)
+    result = benchmark_legacy("./strict_drive", limit=100)
     print(f"{result.files_per_second:.1f} files/sec")
 
-    comparison = run_comparison("./demo_drive_rich", limit=500)
+    comparison = run_comparison("./strict_drive", limit=500)
     print_report(comparison)
 """
 

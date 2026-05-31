@@ -1,3 +1,6 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 from fastapi import FastAPI, Depends, Request, Form, Response, Cookie
 from fastapi.templating import Jinja2Templates
@@ -30,7 +33,7 @@ def startup_event():
         # This mitigates the issue of files appearing 'clean' initially.
         
         # 1. Load Owner Hints to generate Employees
-        hints_path = Path("demo_drive_rich/owner_hints.json")
+        hints_path = Path("strict_drive/owner_hints.jsonl")
         hints = {}
         if hints_path.exists():
             with open(hints_path, "r", encoding="utf-8") as f:
@@ -81,8 +84,8 @@ def startup_event():
         if new_employees:
             db.commit()
 
-        # 2. Ingest FileMetadata from demo_drive_rich
-        connector = LocalSampleRepoConnector(repo_path="./demo_drive_rich")
+        # 2. Ingest FileMetadata from strict_drive
+        connector = LocalSampleRepoConnector(repo_path="./strict_drive")
         files = connector.list_files()
         
         # Cache existing file paths
@@ -930,7 +933,7 @@ from pydantic import BaseModel as PydanticBaseModel
 
 class TriggerScanRequest(PydanticBaseModel):
     """Optional body for POST /api/admin/trigger-scan."""
-    target_dir: str = "./demo_drive_rich"
+    target_dir: str = "./strict_drive"
     previous_scan_id: Optional[str] = None  # e.g. "scan-a1b2c3d4"
 
 
@@ -1165,7 +1168,7 @@ _latest_extraction_result: dict = {}
 
 class TriggerExtractionRequest(PydanticBaseModel):
     """Body for POST /api/admin/trigger-extraction."""
-    target_dir: str = "./demo_drive_rich"
+    target_dir: str = "./strict_drive"
 
 
 @app.post("/api/admin/trigger-extraction")
@@ -1741,11 +1744,10 @@ def ocr_cache_stats():
 
 @app.post("/api/scan/image/clear-cache")
 def ocr_clear_cache():
-    '''Flush the OCR result cache (admin endpoint).'''
+    """Flush the OCR result cache (admin endpoint)."""
     from src.ocr_scanner import clear_cache
     evicted = clear_cache()
     return {"status": "success", "evicted_entries": evicted}
-
 
 from fastapi.responses import FileResponse
 from fastapi import Cookie

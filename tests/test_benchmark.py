@@ -25,7 +25,7 @@ from src.benchmark import (
 )
 
 # Path to demo corpus (same as other tests)
-DEMO_CORPUS = os.path.join(os.path.dirname(__file__), "..", "demo_drive_rich")
+DEMO_CORPUS = os.path.join(os.path.dirname(__file__), "..", "strict_drive")
 
 
 # ---------------------------------------------------------------------------

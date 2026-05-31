@@ -522,7 +522,7 @@ def test_run_layered_scan_returns_without_waiting_for_ai():
     from src.scanner import run_layered_scan
     from src.connector import LocalSampleRepoConnector
 
-    repo = os.path.join(os.path.dirname(__file__), "..", "demo_drive_rich")
+    repo = os.path.join(os.path.dirname(__file__), "..", "strict_drive")
     conn = LocalSampleRepoConnector(repo_path=repo)
     file_refs = list(conn.iter_files())[:10]
 
@@ -567,7 +567,7 @@ def test_run_layered_scan_callback_forwards_results():
     from src.scanner import run_layered_scan
     from src.connector import LocalSampleRepoConnector
 
-    repo = os.path.join(os.path.dirname(__file__), "..", "demo_drive_rich")
+    repo = os.path.join(os.path.dirname(__file__), "..", "strict_drive")
     conn = LocalSampleRepoConnector(repo_path=repo)
     file_refs = list(conn.iter_files())[:5]
 
@@ -598,7 +598,7 @@ def test_run_layered_scan_ai_mode_off_never_enqueues():
     from src.scanner import run_layered_scan
     from src.connector import LocalSampleRepoConnector
 
-    repo = os.path.join(os.path.dirname(__file__), "..", "demo_drive_rich")
+    repo = os.path.join(os.path.dirname(__file__), "..", "strict_drive")
     conn = LocalSampleRepoConnector(repo_path=repo)
     file_refs = list(conn.iter_files())[:10]
 
@@ -620,7 +620,7 @@ def test_run_layered_scan_graceful_fallback_no_parser():
     from src.scanner import run_layered_scan
     from src.connector import LocalSampleRepoConnector
 
-    repo = os.path.join(os.path.dirname(__file__), "..", "demo_drive_rich")
+    repo = os.path.join(os.path.dirname(__file__), "..", "strict_drive")
     conn = LocalSampleRepoConnector(repo_path=repo)
     file_refs = list(conn.iter_files())[:5]
 
@@ -654,7 +654,7 @@ def test_run_layered_scan_error_isolation():
     import tempfile
     from pathlib import Path
 
-    demo = os.path.join(os.path.dirname(__file__), "..", "demo_drive_rich")
+    demo = os.path.join(os.path.dirname(__file__), "..", "strict_drive")
     valid_pdfs = sorted(Path(demo).glob("*.pdf"))
     if not valid_pdfs:
         return  # Nothing to test

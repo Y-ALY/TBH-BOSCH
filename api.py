@@ -876,7 +876,7 @@ async def review_finding(finding_id: str, req: ReviewRequest, db: Session = Depe
                 file_path = candidate.resolve()
 
         # 2) Move or delete the file
-        archive_dir = Path("demo_drive_rich/archive").resolve()
+        archive_dir = Path("strict_drive/archive").resolve()
         deletion_note = ""
 
         if file_path and file_path.exists():

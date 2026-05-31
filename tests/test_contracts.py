@@ -206,10 +206,10 @@ def test_scanjob_custom_status():
 
 def test_iter_files_yields_fileref_objects():
     """iter_files() should yield FileRef instances."""
-    repo = os.path.join(os.path.dirname(__file__), "..", "demo_drive_rich")
+    repo = os.path.join(os.path.dirname(__file__), "..", "strict_drive")
     conn = LocalSampleRepoConnector(repo_path=repo)
     files = list(conn.iter_files())
-    assert len(files) > 0, "Expected at least one PDF in demo_drive_rich"
+    assert len(files) > 0, "Expected at least one PDF in strict_drive"
     for f in files:
         assert isinstance(f, FileRef), f"Expected FileRef, got {type(f)}"
     assert all(f.source_type == "local" for f in files)
@@ -217,7 +217,7 @@ def test_iter_files_yields_fileref_objects():
 
 def test_iter_files_file_ref_has_required_fields():
     """Each FileRef from iter_files should have all required fields populated."""
-    repo = os.path.join(os.path.dirname(__file__), "..", "demo_drive_rich")
+    repo = os.path.join(os.path.dirname(__file__), "..", "strict_drive")
     conn = LocalSampleRepoConnector(repo_path=repo)
     for f in conn.iter_files():
         assert f.file_id, "file_id should not be empty"
@@ -235,7 +235,7 @@ def test_iter_files_file_ref_has_required_fields():
 
 def test_open_file_returns_readable_stream():
     """open_file() should return a readable binary file object."""
-    repo = os.path.join(os.path.dirname(__file__), "..", "demo_drive_rich")
+    repo = os.path.join(os.path.dirname(__file__), "..", "strict_drive")
     conn = LocalSampleRepoConnector(repo_path=repo)
     # Get first file ref
     first = next(conn.iter_files())
@@ -313,7 +313,7 @@ def test_finding_still_works():
 
 def test_list_files_still_returns_filemetadata():
     """list_files() should still return FileMetadata objects (backward compat)."""
-    repo = os.path.join(os.path.dirname(__file__), "..", "demo_drive_rich")
+    repo = os.path.join(os.path.dirname(__file__), "..", "strict_drive")
     conn = LocalSampleRepoConnector(repo_path=repo)
     files = conn.list_files()
     assert len(files) > 0

@@ -297,7 +297,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ai.add_argument("--repo", required=True, help="Path to PDF directory")
     p_ai.add_argument("--owner-hints", default=None, help="Path to owner hints JSON")
     p_ai.add_argument("--output", default="data/output", help="Output directory for results")
-    p_ai.add_argument("--model", default=None, help="OpenRouter model (default: anthropic/claude-sonnet-4)")
+    p_ai.add_argument("--model", default=None, help="OpenRouter model (default: openai/gpt-oss-safeguard-20b)")
     p_ai.set_defaults(func=cmd_ai_scan)
 
     # delta-scan

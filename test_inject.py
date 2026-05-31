@@ -10,13 +10,13 @@ from src.connector import LocalSampleRepoConnector
 
 db = SessionLocal()
 try:
-    hints_path = Path("demo_drive_rich/owner_hints.json")
+    hints_path = Path("strict_drive/owner_hints.jsonl")
     hints = {}
     if hints_path.exists():
         with open(hints_path, "r", encoding="utf-8") as f:
             hints = json.load(f)
             
-    connector = LocalSampleRepoConnector(repo_path="./demo_drive_rich")
+    connector = LocalSampleRepoConnector(repo_path="./strict_drive")
     files = connector.list_files()
     print(f"Found {len(files)} files in connector.")
     

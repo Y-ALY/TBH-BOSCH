@@ -1,0 +1,9 @@
+Initializing benchmark...
+Streaming files directly for benchmarking...
+
+--- RUNTIME ANALYSIS ---
+Total files scanned: 104991
+Total time elapsed:  65.3948 seconds
+Throughput:          1605.62 files/second
+Findings discovered: 379128
+------------------------

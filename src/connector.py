@@ -100,7 +100,7 @@ class LocalSampleRepoConnector(Connector):
             return []
 
         files = []
-        for pdf_path in sorted(self.repo_path.glob("*.pdf")):
+        for pdf_path in sorted(self.repo_path.rglob("*.pdf")):
             try:
                 stat = pdf_path.stat()
                 content_hash = self._hash_file(pdf_path)
@@ -127,7 +127,7 @@ class LocalSampleRepoConnector(Connector):
         if not self.repo_path.exists():
             return
 
-        for pdf_path in sorted(self.repo_path.glob("*.pdf")):
+        for pdf_path in self.repo_path.rglob("*.pdf"):
             try:
                 stat = pdf_path.stat()
                 etag = f"mtime:{stat.st_mtime:.0f}:size:{stat.st_size}"
@@ -202,7 +202,7 @@ class LocalSampleRepoConnector(Connector):
     def get_change_token(self) -> str:
         """Hash of (name, mtime, size) for all PDFs — a cheap change fingerprint."""
         hasher = hashlib.sha256()
-        for pdf_path in sorted(self.repo_path.glob("*.pdf")):
+        for pdf_path in sorted(self.repo_path.rglob("*.pdf")):
             try:
                 stat = pdf_path.stat()
                 token = f"{pdf_path.name}|{stat.st_mtime}|{stat.st_size}"

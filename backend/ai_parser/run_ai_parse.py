@@ -17,7 +17,7 @@ Usage:
 Environment variables:
     AI_PARSER_MODE       "mock" (default) or "live"
     OPENROUTER_API_KEY    Required for live mode
-    OPENROUTER_MODEL      Model name (default: openai/gpt-4o)
+    OPENROUTER_MODEL      Model name (default: openai/gpt-oss-safeguard-20b)
 """
 
 from __future__ import annotations

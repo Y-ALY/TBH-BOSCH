@@ -1,7 +1,7 @@
 """Benchmark CLI for the GDPR scanning pipeline.
 
 Usage:
-    python scripts/benchmark.py                    # Full comparison on demo_drive_rich
+    python scripts/benchmark.py                    # Full comparison on strict_drive
     python scripts/benchmark.py --limit 500        # Quick test on 500 files
     python scripts/benchmark.py --legacy-only      # Only run legacy scanner
     python scripts/benchmark.py --streaming-only   # Only run streaming scanner
@@ -67,8 +67,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--corpus",
-        default=str(_PROJECT_ROOT / "demo_drive_rich"),
-        help="Path to corpus directory (default: ./demo_drive_rich)",
+        default=str(_PROJECT_ROOT / "strict_drive"),
+        help="Path to corpus directory (default: ./strict_drive)",
     )
     parser.add_argument(
         "--limit",

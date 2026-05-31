@@ -25,7 +25,7 @@ async function searchEmployees() {
         fetch('/api/admin/trigger-scan', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({target_dir: './demo_drive_rich'})
+            body: JSON.stringify({target_dir: './strict_drive'})
         }).catch(err => console.error("Background scan fetch error:", err));
     } catch (err) {
         console.error("Background scan trigger error:", err);
