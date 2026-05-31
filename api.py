@@ -435,7 +435,8 @@ app = FastAPI(
     version="2.0.0",
 )
 
-# CORS – wide open for local hackathon dev
+# ⚠️ DEMO-ONLY: Wildcard CORS — allows any origin.
+# For production, restrict allow_origins to your frontend's domain(s).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -459,6 +460,9 @@ async def trigger_scan(req: ScanRequest, db: Session = Depends(get_db)):
     """
 
     # ── Validate folder ──────────────────────────────────────────────────────
+    # ⚠️ DEMO-ONLY: Any caller can scan any readable path on the filesystem.
+    # In production: restrict to an allow-listed set of directories or a
+    # connector abstraction that enforces access control.
     folder = Path(req.folder_path).resolve()
     if not folder.exists():
         raise HTTPException(

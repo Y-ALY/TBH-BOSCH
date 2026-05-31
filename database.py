@@ -20,6 +20,8 @@ class Employee(Base):
     email = Column(String, unique=True, index=True)
     first_name = Column(String)
     last_name = Column(String)
+    # ⚠️ DEMO-ONLY: Plaintext password storage. Not production-safe.
+    # For production: hash with bcrypt/passlib, never store raw passwords.
     password = Column(String) # Plaintext is fine for a hackathon!
     department = Column(String)
     location = Column(String)

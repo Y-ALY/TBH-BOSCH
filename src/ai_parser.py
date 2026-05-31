@@ -151,6 +151,11 @@ class AIParseResult:
 class AIParser:
     """Send document text to OpenRouter LLM for GDPR analysis.
 
+    ⚠️ DEMO-ONLY / COMPLIANCE NOTE: Raw document text (up to 3000 chars) is sent
+    to a third-party LLM provider (OpenRouter). In production environments,
+    evaluate whether this constitutes a data transfer under GDPR Article 44-49.
+    Mitigations: use an EU-hosted model, on-premise LLM, or a DPA with the provider.
+
     Requires OPENROUTER_API_KEY env var.
     Optional: OPENROUTER_MODEL (default: anthropic/claude-sonnet-4)
     """

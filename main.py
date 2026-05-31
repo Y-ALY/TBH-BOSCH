@@ -36,7 +36,8 @@ def startup_event():
             with open(hints_path, "r", encoding="utf-8") as f:
                 hints = json.load(f)
                 
-        # Always ensure admin exists
+            # ⚠️ DEMO-ONLY: Hardcoded admin account with a well-known password.
+        # In production: seed initial admin from env vars with a generated password.
         admin = db.query(Employee).filter(Employee.email == "admin@bosch.com").first()
         if not admin:
             admin = Employee(
@@ -149,7 +150,8 @@ app.mount(
 
 templates = Jinja2Templates(directory="templates")
 
-# Allow the frontend to talk to this backend without security blocks
+# ⚠️ DEMO-ONLY: Wildcard CORS allows any origin to call this API.
+# For production, restrict allow_origins to your frontend's domain(s).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allows all origins (good for hackathons)
@@ -190,9 +192,10 @@ def login(
     password: str = Form(...),
     db: Session = Depends(get_db)
 ):
-    # Search for the user in the database
+    # ⚠️ DEMO-ONLY: Plaintext password comparison against DB. No hashing, no rate limiting.
+    # See docs/production-readiness.md for production auth requirements.
     user = db.query(Employee).filter(Employee.email == email).first()
-    
+
     if not user or user.password != password:
         return templates.TemplateResponse(
             request=request,
@@ -205,6 +208,8 @@ def login(
     else:
         redirect = RedirectResponse(url="/employee-dashboard", status_code=303)
         
+    # ⚠️ DEMO-ONLY: Unsigned cookie — anyone can forge a session by setting session_emp_id.
+    # For production: use signed sessions (e.g., starlette SessionMiddleware) or JWT tokens.
     redirect.set_cookie(key="session_emp_id", value=user.employee_id)
     return redirect
 
