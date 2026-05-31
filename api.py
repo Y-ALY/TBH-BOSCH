@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 import uuid
@@ -21,6 +22,9 @@ from pathlib import Path
 from typing import Optional, List
 import tempfile
 import shutil
+
+# Default scan root for the demo. Override with SCAN_ROOT env var.
+SCAN_ROOT = os.environ.get("SCAN_ROOT", "./demo_drive_rich")
 
 from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -880,7 +884,7 @@ async def review_finding(finding_id: str, req: ReviewRequest, db: Session = Depe
                 file_path = candidate.resolve()
 
         # 2) Move or delete the file
-        archive_dir = Path("demo_drive_rich/archive").resolve()
+        archive_dir = (Path(SCAN_ROOT) / "archive").resolve()
         deletion_note = ""
 
         if file_path and file_path.exists():

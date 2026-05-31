@@ -12,6 +12,10 @@ from database import get_db, Employee, FileMetadata, Finding, Notification
 import os
 from typing import Optional, List, Dict, Any
 
+# Default scan root for the demo. Override with SCAN_ROOT env var.
+# In production (Render), this points to the seeded demo data directory.
+SCAN_ROOT = os.environ.get("SCAN_ROOT", "./demo_drive_rich")
+
 app = FastAPI(title="Bosch GDPR Scan Engine API")
 
 from database import SessionLocal
@@ -30,7 +34,7 @@ def startup_event():
         # This mitigates the issue of files appearing 'clean' initially.
         
         # 1. Load Owner Hints to generate Employees
-        hints_path = Path("demo_drive_rich/owner_hints.json")
+        hints_path = Path(SCAN_ROOT) / "owner_hints.json"
         hints = {}
         if hints_path.exists():
             with open(hints_path, "r", encoding="utf-8") as f:
@@ -82,8 +86,8 @@ def startup_event():
         if new_employees:
             db.commit()
 
-        # 2. Ingest FileMetadata from demo_drive_rich
-        connector = LocalSampleRepoConnector(repo_path="./demo_drive_rich")
+        # 2. Ingest FileMetadata from SCAN_ROOT
+        connector = LocalSampleRepoConnector(repo_path=SCAN_ROOT)
         files = connector.list_files()
         
         # Cache existing file paths
@@ -935,7 +939,7 @@ from pydantic import BaseModel as PydanticBaseModel
 
 class TriggerScanRequest(PydanticBaseModel):
     """Optional body for POST /api/admin/trigger-scan."""
-    target_dir: str = "./demo_drive_rich"
+    target_dir: str = SCAN_ROOT
     previous_scan_id: Optional[str] = None  # e.g. "scan-a1b2c3d4"
 
 
@@ -1170,7 +1174,7 @@ _latest_extraction_result: dict = {}
 
 class TriggerExtractionRequest(PydanticBaseModel):
     """Body for POST /api/admin/trigger-extraction."""
-    target_dir: str = "./demo_drive_rich"
+    target_dir: str = SCAN_ROOT
 
 
 @app.post("/api/admin/trigger-extraction")
@@ -1783,3 +1787,93 @@ def view_file_content(
         raise HTTPException(status_code=404, detail="File has been physically deleted.")
         
     return FileResponse(file_path)
+
+
+# ── Health Check ─────────────────────────────────────────────────────────────
+# Used by Render for zero-downtime deploys and monitoring.
+
+
+@app.get("/api/health")
+def health_check(db: Session = Depends(get_db)):
+    """Quick health probe for Render / monitoring."""
+    return {
+        "status": "ok",
+        "findings_loaded": db.query(Finding).count(),
+        "files_loaded": db.query(FileMetadata).count(),
+        "employees_loaded": db.query(Employee).count(),
+    }
+
+
+# ── Review Action ────────────────────────────────────────────────────────────
+# Mirrors api.py's POST /api/findings/{finding_id}/review so the same
+# single uvicorn process can serve both the dashboard and the review API.
+
+from pydantic import BaseModel as ReviewBaseModel
+
+_ALLOWED_REVIEW_ACTIONS = [
+    "retain", "delete", "archive", "mask",
+    "false_positive", "escalate_dpo",
+]
+
+
+class ReviewRequest(ReviewBaseModel):
+    """Payload for POST /api/findings/{finding_id}/review."""
+    action: str
+    reviewer: str = "Admin"
+    reason: str = ""
+
+
+@app.post("/api/findings/{finding_id}/review")
+def review_finding(
+    finding_id: str,
+    req: ReviewRequest,
+    db: Session = Depends(get_db),
+):
+    """Record a human review action on a finding."""
+    from fastapi import HTTPException as HTTPEx
+    from datetime import datetime as dt
+
+    if req.action not in _ALLOWED_REVIEW_ACTIONS:
+        raise HTTPEx(
+            status_code=422,
+            detail=f"Invalid action '{req.action}'. Allowed: {_ALLOWED_REVIEW_ACTIONS}",
+        )
+
+    # Locate finding by finding_uid or integer id
+    finding = db.query(Finding).filter(Finding.finding_uid == finding_id).first()
+    if finding is None:
+        try:
+            finding = db.query(Finding).filter(Finding.id == int(finding_id)).first()
+        except (ValueError, TypeError):
+            pass
+    if finding is None:
+        raise HTTPEx(status_code=404, detail=f"Finding '{finding_id}' not found.")
+
+    now = dt.now().isoformat()
+    finding.review_action = req.action
+    finding.reviewer = req.reviewer
+    finding.reviewed_at = now
+    finding.recommended_action = req.action
+
+    _action_status_map = {
+        "retain": "retained",
+        "delete": "deleted",
+        "archive": "archived",
+        "mask": "masked",
+        "false_positive": "false_positive",
+        "escalate_dpo": "escalated",
+    }
+    new_state = _action_status_map.get(req.action, req.action)
+    finding.status = new_state
+    finding.review_status = new_state
+    finding.owner_resolved = True
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "finding_id": finding_id,
+        "action": req.action,
+        "reviewer": req.reviewer,
+        "reviewed_at": now,
+    }

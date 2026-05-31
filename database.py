@@ -1,12 +1,27 @@
+import os
 from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime, timedelta
 
-# Using SQLite for instant, zero-config local development
-SQLALCHEMY_DATABASE_URL = "sqlite:///./bosch_gdpr.db"
+# ── Database URL: production reads DATABASE_URL, local dev falls back to SQLite ──
+# Render sets DATABASE_URL automatically when a PostgreSQL database is attached.
+# The SQLite fallback is for local demo/hackathon use only.
+SQLALCHEMY_DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./bosch_gdpr.db")
+
+# PostgreSQL on Render uses connection pooling; SQLite needs check_same_thread=False
+_is_sqlite = SQLALCHEMY_DATABASE_URL.startswith("sqlite")
+_connect_args = {"check_same_thread": False} if _is_sqlite else {}
+# Render free-tier PostgreSQL has a low connection limit (~5). NullPool avoids
+# holding idle connections that would exhaust the limit.
+_poolclass = None
+if not _is_sqlite:
+    from sqlalchemy.pool import NullPool
+    _poolclass = NullPool
 
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    SQLALCHEMY_DATABASE_URL,
+    connect_args=_connect_args,
+    poolclass=_poolclass,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

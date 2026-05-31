@@ -1,0 +1,22 @@
+# Render Blueprint for TBH-BOSCH presentation deployment
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: tbh-bosch
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tbh-bosch-db
+          property: connectionString
+      - key: SCAN_ROOT
+        value: ./demo_drive_rich
+      - key: DEMO_MODE
+        value: "true"
+
+databases:
+  - name: tbh-bosch-db
+    plan: free
