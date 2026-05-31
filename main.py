@@ -19,137 +19,128 @@ from database import SessionLocal
 @app.on_event("startup")
 def startup_event():
     import json
-    import uuid
+    import hashlib
     from pathlib import Path
     from datetime import datetime, timedelta
+    from src.connector import LocalSampleRepoConnector
     
     db = SessionLocal()
     try:
-        print("Forcefully clearing DB tables for clean hackathon demo state...")
-        db.query(Finding).delete()
-        db.query(FileMetadata).delete()
-        db.commit()
+        # We no longer clear the DB tables to preserve the delta state and findings across reboots.
+        # This mitigates the issue of files appearing 'clean' initially.
         
-        # 1. Inject sample user data
-        user = db.query(Employee).filter(Employee.email == "john.doe@company.com").first()
-        if not user:
-            user = Employee(
-                employee_id="BX-1001",
-                email="john.doe@company.com",
-                first_name="John",
-                last_name="Doe",
-                password="password123",
-                department="Engineering",
-                location="Heilbronn"
+        # 1. Load Owner Hints to generate Employees
+        hints_path = Path("demo_drive_rich/owner_hints.json")
+        hints = {}
+        if hints_path.exists():
+            with open(hints_path, "r", encoding="utf-8") as f:
+                hints = json.load(f)
+                
+        # Always ensure admin exists
+        admin = db.query(Employee).filter(Employee.email == "admin@bosch.com").first()
+        if not admin:
+            admin = Employee(
+                employee_id="BX-ADMIN", email="admin@bosch.com",
+                first_name="Admin", last_name="User",
+                password="password123", department="IT Security", location="Stuttgart"
             )
-            db.add(user)
+            db.add(admin)
             db.commit()
 
-        # 2. Open and parse the test cases JSON
-        json_path = Path("tests/test_cases/workflow_input_test_cases.json")
-        if not json_path.exists():
-            print(f"\n[WARNING] Seed file missing: {json_path}")
-            print("Please ensure the file exists. Mock data injection bypassed.\n")
-            return
+        # Cache existing employees to completely avoid N+1 queries
+        all_employees = db.query(Employee).all()
+        added_emails = {e.email for e in all_employees}
+        added_emp_ids = {e.employee_id for e in all_employees}
+        email_to_emp_id = {e.email: e.employee_id for e in all_employees}
 
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        new_employees = []
+        for file_name, hint in hints.items():
+            email = hint.get("email", "unknown@bosch.com")
+            if email in added_emails:
+                continue
+
+            emp_id_int = int(hashlib.md5(email.encode()).hexdigest(), 16) % 90000 + 10000
+            emp_id_str = f"BX-{emp_id_int}"
+            while emp_id_str in added_emp_ids:
+                emp_id_int = (emp_id_int - 10000 + 1) % 90000 + 10000
+                emp_id_str = f"BX-{emp_id_int}"
+            
+            added_emp_ids.add(emp_id_str)
+            added_emails.add(email)
+            email_to_emp_id[email] = emp_id_str
+
+            first, last = hint.get("name", "Unknown User").split(" ", 1) if " " in hint.get("name", "") else (hint.get("name", "User"), "")
+            emp = Employee(
+                employee_id=emp_id_str, email=email,
+                first_name=first, last_name=last,
+                password="password123", department=hint.get("department", "Unknown"), location="Unknown"
+            )
+            new_employees.append(emp)
+            db.add(emp)
         
-        # Defensively extract the list of cases
-        cases = data.get("cases", []) if isinstance(data, dict) else data
-        if not isinstance(cases, list):
-            cases = []
-            
-        # Seed the DB with Finding models
-        import re
-        import hashlib
-        for idx, case in enumerate(cases):
-            doc = case.get("document", {})
-            file_name = doc.get("file_name", "unknown_file.txt")
-            content = doc.get("content", "")
-            
-            # Dynamically determine the owner_employee_id based on the email in the content
-            email_match = re.search(r'[\w\.-]+@[\w\.-]+', content)
-            email = email_match.group(0).lower().rstrip('.') if email_match else "john.doe@company.com"
-            user_record = db.query(Employee).filter(Employee.email == email).first()
-            if user_record:
-                owner_id = user_record.employee_id
-            else:
-                emp_id_int = int(hashlib.md5(email.encode()).hexdigest(), 16) % 90000 + 10000
-                owner_id = f"BX-{emp_id_int}"
-            
-            # Create FileMetadata to avoid breaking other endpoints
-            f_meta = db.query(FileMetadata).filter(FileMetadata.file_path == f"/simulated_drive/{file_name}").first()
-            if not f_meta:
-                days_offset = -10 if idx % 3 == 0 else (15 if idx % 3 == 1 else 200)
-                f_meta = FileMetadata(
-                    file_path=f"/simulated_drive/{file_name}",
-                    owner_employee_id=owner_id,
-                    size_bytes=len(content),
-                    file_hash=f"hash_{file_name}",
-                    last_modified=datetime.now(),
-                    retention_deadline=datetime.now() + timedelta(days=days_offset)
-                )
-                db.add(f_meta)
-                db.commit()
-                db.refresh(f_meta)
-            
-            expected = case.get("expected", {})
-            categories = expected.get("challenge_personal_data_present", [])
-            type_val = ", ".join(categories) if categories else "PII"
-            
-            # We can use part of the content as the flagged_snippet/value
-            value_val = content[:100] + "..." if len(content) > 100 else content
-            
-            # Simple logic to determine risk
-            risk_level = "medium"
-            if "passport_number" in categories or "credit_card" in expected.get("exact_match_counts", {}):
-                risk_level = "high"
+        if new_employees:
+            db.commit()
+
+        # 2. Ingest FileMetadata from demo_drive_rich
+        connector = LocalSampleRepoConnector(repo_path="./demo_drive_rich")
+        files = connector.list_files()
+        
+        # Cache existing file paths
+        existing_file_paths = {f[0] for f in db.query(FileMetadata.file_path).all()}
+        
+        new_metas = []
+        for idx, file_meta in enumerate(files):
+            if file_meta.path in existing_file_paths:
+                continue
                 
-            finding = Finding(
-                finding_uid=str(uuid.uuid4()),
-                file_id=f_meta.id,
-                file_id_str=file_name,
-                type=type_val,
-                category=type_val,
-                value=value_val,
-                flagged_snippet=value_val,
-                context=content,
-                risk_level=risk_level,
-                status="Pending",
-                assigned_owner=owner_id # Good for UI logic
-            )
-            db.add(finding)
-        
-        # Explicitly create 3 'clean' FileMetadata records
-        for i in range(1, 4):
-            clean_meta = FileMetadata(
-                file_path=f"/simulated_drive/clean_report_2026_{i}.pdf",
-                owner_employee_id="BX-1001",
-                size_bytes=5000,
-                file_hash=f"hash_clean_{i}",
-                last_modified=datetime.now(),
-                retention_deadline=datetime.now() + timedelta(days=200)
-            )
-            db.add(clean_meta)
+            hint = hints.get(file_meta.file_name, {})
+            email = hint.get("email")
+            owner_id = email_to_emp_id.get(email, "BX-ADMIN") if email else "BX-ADMIN"
             
-            clean_meta_anna = FileMetadata(
-                file_path=f"/simulated_drive/anna_clean_report_2026_{i}.pdf",
-                owner_employee_id="BX-26357",
-                size_bytes=5000,
-                file_hash=f"hash_anna_clean_{i}",
-                last_modified=datetime.now(),
-                retention_deadline=datetime.now() + timedelta(days=200)
-            )
-            db.add(clean_meta_anna)
+            days_offset = -10 if idx % 3 == 0 else (15 if idx % 3 == 1 else 200)
+            
+            try:
+                last_mod = datetime.fromisoformat(file_meta.last_modified)
+            except:
+                last_mod = datetime.now()
 
-        db.commit()
-        print(f"Mock data successfully seeded from {json_path}!")
+            new_meta = FileMetadata(
+                file_path=file_meta.path,
+                owner_employee_id=owner_id,
+                size_bytes=file_meta.size_bytes,
+                file_hash=file_meta.content_hash,
+                last_modified=last_mod,
+                retention_deadline=datetime.now() + timedelta(days=days_offset)
+            )
+            new_metas.append(new_meta)
+            db.add(new_meta)
+            
+        if new_metas:
+            db.commit()
+        
+        # 3. Cleanup deleted files from the database to keep counts accurate
+        import os
+        all_db_files = db.query(FileMetadata).all()
+        deleted_file_ids = []
+        deleted_files = []
+        for db_file in all_db_files:
+            if not db_file.file_path.startswith("[DELETED]") and not os.path.exists(db_file.file_path):
+                deleted_file_ids.append(db_file.id)
+                deleted_files.append(db_file)
+                
+        if deleted_file_ids:
+            db.query(Finding).filter(Finding.file_id.in_(deleted_file_ids)).delete(synchronize_session=False)
+            for df in deleted_files:
+                db.delete(df)
+            db.commit()
+        
+        print(f"Successfully ingested {len(files)} files into FileMetadata on startup.")
             
     except Exception as e:
-        print(f"Error injecting mock data on startup: {e}")
+        print(f"Error injecting data on startup: {e}")
     finally:
         db.close()
+
 app.mount(
     "/static",
     StaticFiles(directory="static"),
@@ -446,25 +437,29 @@ def search_employees(q: str, db: Session = Depends(get_db)):
     if not q:
         return []
     
-    q_lower = q.lower()
-    employees = db.query(Employee).all()
+    q_lower = f"%{q.lower()}%"
+    from sqlalchemy import or_, func
+    
+    employees = db.query(Employee).filter(
+        or_(
+            func.lower(Employee.first_name).like(q_lower),
+            func.lower(Employee.last_name).like(q_lower),
+            func.lower(Employee.email).like(q_lower),
+            func.lower(Employee.employee_id).like(q_lower),
+            func.lower(Employee.first_name + " " + Employee.last_name).like(q_lower)
+        )
+    ).limit(50).all()
+    
     results = []
     for emp in employees:
-        full_name = f"{emp.first_name or ''} {emp.last_name or ''}".lower()
-        if (q_lower in full_name or 
-            q_lower in (emp.first_name or "").lower() or 
-            q_lower in (emp.last_name or "").lower() or 
-            q_lower in (emp.email or "").lower() or 
-            q_lower in (emp.employee_id or "").lower()):
-            
-            results.append({
-                "employee_id": emp.employee_id,
-                "first_name": emp.first_name,
-                "last_name": emp.last_name,
-                "email": emp.email,
-                "department": emp.department,
-                "location": emp.location
-            })
+        results.append({
+            "employee_id": emp.employee_id,
+            "first_name": emp.first_name,
+            "last_name": emp.last_name,
+            "email": emp.email,
+            "department": emp.department,
+            "location": emp.location
+        })
     return results
 
 @app.post("/api/admin/extend-retention/{file_id}")
@@ -692,7 +687,7 @@ from pydantic import BaseModel as PydanticBaseModel
 
 class TriggerScanRequest(PydanticBaseModel):
     """Optional body for POST /api/admin/trigger-scan."""
-    target_dir: str = "./mock_drive"
+    target_dir: str = "./demo_drive_rich"
     previous_scan_id: Optional[str] = None  # e.g. "scan-a1b2c3d4"
 
 
@@ -778,13 +773,48 @@ def trigger_manual_scan(
         new_findings = scan_result.findings
         added_ids = {f.file_id for f in connector.list_files()}
 
+    # ── Persist FileMetadata for newly discovered files ──────────────────
+    from datetime import datetime, timedelta
+    for file_meta in connector.list_files():
+        existing_fm = db.query(FileMetadata).filter(FileMetadata.file_path == file_meta.path).first()
+        if not existing_fm:
+            try:
+                last_mod = datetime.fromisoformat(file_meta.last_modified)
+            except:
+                last_mod = datetime.now()
+            new_fm = FileMetadata(
+                file_path=file_meta.path,
+                owner_employee_id="BX-17335", # default fallback if not caught by hints
+                size_bytes=file_meta.size_bytes,
+                file_hash=file_meta.content_hash,
+                last_modified=last_mod,
+                retention_deadline=datetime.now() + timedelta(days=200)
+            )
+            db.add(new_fm)
+            
+    # ── Clean up files missing from the filesystem ───────────────────────
+    import os
+    all_db_files = db.query(FileMetadata).all()
+    for db_file in all_db_files:
+        if not db_file.file_path.startswith("[DELETED]") and not os.path.exists(db_file.file_path):
+            db.query(Finding).filter(Finding.file_id == db_file.id).delete()
+            db.delete(db_file)
+    db.commit()
+
     # ── Persist new findings to the DB ───────────────────────────────────
     for f in new_findings:
         existing = db.query(Finding).filter(Finding.finding_uid == f.finding_id).first()
         if existing:
             continue  # skip duplicates
+            
+        # Get the actual file ID from the FileMetadata table
+        filename = f.file_id.replace("local:", "")
+        file_meta = db.query(FileMetadata).filter(FileMetadata.file_path.like(f"%{filename}")).first()
+        actual_file_id = file_meta.id if file_meta else None
+            
         row = Finding(
             finding_uid=f.finding_id,
+            file_id=actual_file_id,
             file_id_str=f.file_id,
             type=f.type,
             value=f.value,

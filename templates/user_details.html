@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="/static/css/dashboard.css?v=3">
+<link rel="stylesheet" href="/static/css/dashboard.css?v=6">
 
 <script>
     if (localStorage.getItem("pg-theme") === "light") {
@@ -305,7 +305,7 @@ Loading secure document content...
         
         <div style="display: flex; justify-content: flex-end; gap: 15px; margin-top: 30px;">
             <button class="action-btn" onclick="closeDocumentModal()" style="background: transparent; border: 1px solid var(--border-subtle);">Close</button>
-            <button class="action-btn" onclick="flagBusinessReason()" style="background: linear-gradient(90deg, #ea0016, #d10000); border: none; color: white;">Flag for Business Reasons</button>
+            <button class="action-btn" onclick="flagBusinessReason()" style="background: var(--accent-blue); border: none; color: white;">Flag for Business Reasons</button>
         </div>
     </div>
 </div>
@@ -378,7 +378,7 @@ async function loadUserProfile() {
     } catch (err) {
         contentArea.innerHTML = `
             <div class="glass-card error-state">
-                <p>⚠️ Error loading user data</p>
+                <p><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Error loading user data</p>
                 <p style="font-weight:400; color: var(--text-muted); font-size:13px; margin-top:8px;">${err.message}</p>
             </div>
         `;
@@ -387,11 +387,11 @@ async function loadUserProfile() {
 
 function getCategoryIcon(category) {
     category = (category || "").toLowerCase();
-    if (category.includes("passport")) return "🛂";
-    if (category.includes("financial") || category.includes("bank") || category.includes("iban") || category.includes("salary")) return "🏦";
-    if (category.includes("contact") || category.includes("phone") || category.includes("email")) return "📞";
-    if (category.includes("id") || category.includes("identity")) return "🆔";
-    return "📄";
+    if (category.includes("passport")) return `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="#34495e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" ry="2"></rect><line x1="12" y1="2" x2="12" y2="22"></line></svg>`;
+    if (category.includes("financial") || category.includes("bank") || category.includes("iban") || category.includes("salary")) return `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="#27ae60" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 22 7 12 2"></polygon><polyline points="2 17 2 22 22 22 22 17"></polyline><line x1="6" y1="12" x2="6" y2="17"></line><line x1="10" y1="12" x2="10" y2="17"></line><line x1="14" y1="12" x2="14" y2="17"></line><line x1="18" y1="12" x2="18" y2="17"></line></svg>`;
+    if (category.includes("contact") || category.includes("phone") || category.includes("email")) return `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="#8e44ad" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>`;
+    if (category.includes("id") || category.includes("identity")) return `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="#d35400" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" ry="2"></rect><path d="M7 15V9h4v6H7z"></path><path d="M15 15V9"></path><path d="M15 12h2"></path></svg>`;
+    return `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`;
 }
 
 function getStatusClass(status) {
@@ -454,7 +454,7 @@ function renderProfile(data) {
     if (!filteredFiles || filteredFiles.length === 0) {
         contentArea.innerHTML = `
             <div class="glass-card empty-state">
-                <div style="font-size: 50px; margin-bottom: 20px; opacity: 0.5;">📂</div>
+                <div style="font-size: 50px; margin-bottom: 20px; opacity: 0.5;"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></div>
                 <h3>No Data Found</h3>
                 <p>No documents match your search or filter criteria.</p>
             </div>
@@ -490,7 +490,7 @@ function renderProfile(data) {
             <div class="glass-card data-card" id="${cardId}" style="${cardStyle}">
                 <div style="display: flex; align-items: center; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px; margin-bottom: 10px;">
                     <h3 style="margin: 0; font-size: 16px;">
-                        <span class="category-icon">📄</span> ${escapeHtml(file.file_name)}
+                        <span class="category-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></span> ${escapeHtml(file.file_name)}
                     </h3>
                     ${badgeHtml}
                 </div>
@@ -539,8 +539,8 @@ function renderProfile(data) {
                     </button>
                     <button 
                         onclick="handleDeleteExpired('${file.file_id}', '${employeeId}', '${cardId}')"
-                        style="flex: 1; padding: 8px 16px; background: linear-gradient(90deg, #ea0016, #b00010); color: white; border: none; border-radius: 8px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 700; font-size: 13px; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(234,0,22,0.2);">
-                        ⚠️ Delete File (Permanent)
+                        style="flex: 1; padding: 8px 16px; background: var(--accent-blue); color: white; border: none; border-radius: 8px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 700; font-size: 13px; transition: all 0.3s ease; box-shadow: 0 4px 12px var(--accent-blue-soft);">
+                        Delete File (Permanent)
                     </button>
                 </div>
             `;
@@ -696,7 +696,8 @@ categoryFilter.addEventListener("change", () => {
 loadUserProfile();
 
 async function extendRetention(fileId) {
-    if(!confirm("Are you sure you want to extend the retention period for this document?")) return;
+    const isConfirmed = await window.customConfirm("Are you sure you want to extend the retention period for this document?");
+    if(!isConfirmed) return;
     try {
         const response = await fetch(`/api/admin/extend-retention/${encodeURIComponent(fileId)}`, { method: 'POST' });
         const res = await response.json();
@@ -707,7 +708,7 @@ async function extendRetention(fileId) {
 }
 
 </script>
-<script src="/static/js/dashboard.js?v=3"></script>
+<script src="/static/js/dashboard.js?v=6"></script>
 
 </body>
 </html>

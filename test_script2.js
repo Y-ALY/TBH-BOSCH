@@ -1,0 +1,403 @@
+<script>
+    if (localStorage.getItem("pg-theme") === "light") {
+        document.documentElement.style.background = "#f3f4f8";
+    }
+</script>
+<script>
+let currentDocumentFileId = null;
+
+function openDocumentModal(fileName, fileId) {
+    currentDocumentFileId = fileId;
+    document.getElementById('modalDocTitle').innerText = fileName;
+    document.getElementById('modalDocContent').innerText = 
+        `[RESTRICTED DOCUMENT CONTENT]\n\n` +
+        `Filename: ${fileName}\n` +
+        `Classification: Internal / Confidential\n` +
+        `Timestamp: ${new Date().toLocaleString()}\n\n` +
+        `... Extracted text for analysis ...\n` +
+        `This is a secure preview of the document contents for administrative review. Ensure compliance with internal data handling policies before proceeding.`;
+    document.getElementById('documentModal').style.display = 'block';
+}
+
+function closeDocumentModal() {
+    document.getElementById('documentModal').style.display = 'none';
+}
+
+function flagBusinessReason() {
+    if (currentDocumentFileId) {
+        extendRetention(currentDocumentFileId);
+        closeDocumentModal();
+    } else {
+        alert("Error: No document selected.");
+    }
+}
+
+/* ---- UI Toggles ---- */
+
+
+/* ---- Account Menu Toggle ---- */
+// Now handled globally in dashboard.js
+
+/* ---- Data Fetching and Rendering ---- */
+const employeeId = "{{ employee_id }}";
+const contentArea = document.getElementById("content-area");
+const controlsArea = document.getElementById("controls-area");
+const searchInput = document.getElementById("userSearchInput");
+const categoryFilter = document.getElementById("userCategoryFilter");
+
+let countdownInterval = null;
+let allUserData = null;
+
+async function loadUserProfile() {
+    try {
+        const response = await fetch(`/api/user-details/${encodeURIComponent(employeeId)}`);
+        if (!response.ok) throw new Error("Failed to load data");
+        allUserData = await response.json();
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const fileId = urlParams.get('file_id');
+        if (fileId && allUserData.files) {
+            allUserData.files = allUserData.files.filter(f => f.file_id === fileId || String(f.file_id) === fileId);
+            
+            // Update hero text if showing a specific file
+            if (allUserData.files.length > 0) {
+                document.querySelector('.hero p').innerHTML = `File details for <strong id="hero-user-id">${allUserData.files[0].file_name}</strong>`;
+                document.querySelector('.hero h1').innerText = "File Profile";
+            }
+        }
+        
+        controlsArea.style.display = "block";
+        renderProfile(allUserData);
+    } catch (err) {
+        contentArea.innerHTML = `
+            <div class="glass-card error-state">
+                <p><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Error loading user data</p>
+                <p style="font-weight:400; color: var(--text-muted); font-size:13px; margin-top:8px;">${err.message}</p>
+            </div>
+        `;
+    }
+}
+
+function getCategoryIcon(category) {
+    category = (category || "").toLowerCase();
+    if (category.includes("passport")) return `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="#34495e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" ry="2"></rect><line x1="12" y1="2" x2="12" y2="22"></line></svg>`;
+    if (category.includes("financial") || category.includes("bank") || category.includes("iban") || category.includes("salary")) return `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="#27ae60" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 22 7 12 2"></polygon><polyline points="2 17 2 22 22 22 22 17"></polyline><line x1="6" y1="12" x2="6" y2="17"></line><line x1="10" y1="12" x2="10" y2="17"></line><line x1="14" y1="12" x2="14" y2="17"></line><line x1="18" y1="12" x2="18" y2="17"></line></svg>`;
+    if (category.includes("contact") || category.includes("phone") || category.includes("email")) return `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="#8e44ad" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>`;
+    if (category.includes("id") || category.includes("identity")) return `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="#d35400" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" ry="2"></rect><path d="M7 15V9h4v6H7z"></path><path d="M15 15V9"></path><path d="M15 12h2"></path></svg>`;
+    return `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`;
+}
+
+function getStatusClass(status) {
+    status = (status || "").toLowerCase();
+    if (status === "pending") return "warning";
+    if (status === "deleted") return "low";
+    return "danger";
+}
+
+function renderProfile(data) {
+    const query = searchInput.value.toLowerCase().trim();
+    const category = categoryFilter.value.toLowerCase();
+
+    let filteredFiles = data.files || [];
+
+    if (query || category) {
+        filteredFiles = filteredFiles.filter(file => {
+            let matchesSearch = false;
+            let matchesCategory = false;
+
+            // Search matching
+            if (!query) {
+                matchesSearch = true;
+            } else {
+                if (file.file_name && file.file_name.toLowerCase().includes(query)) matchesSearch = true;
+                if (file.file_path && file.file_path.toLowerCase().includes(query)) matchesSearch = true;
+                
+                if (file.findings) {
+                    file.findings.forEach(f => {
+                        if (f.flagged_snippet && f.flagged_snippet.toLowerCase().includes(query)) matchesSearch = true;
+                        if (f.reasoning && f.reasoning.toLowerCase().includes(query)) matchesSearch = true;
+                        if (f.category && f.category.toLowerCase().includes(query)) matchesSearch = true;
+                    });
+                }
+            }
+
+            // Category matching
+            if (!category) {
+                matchesCategory = true;
+            } else if (file.findings && file.findings.length > 0) {
+                matchesCategory = file.findings.some(f => {
+                    const fCat = (f.category || "").toLowerCase();
+                    if (category === "passport" && (fCat.includes("passport") || fCat.includes("id "))) return true;
+                    if (category === "financial" && (fCat.includes("iban") || fCat.includes("credit") || fCat.includes("bank") || fCat.includes("tax"))) return true;
+                    if (category === "contact" && (fCat.includes("phone") || fCat.includes("email") || fCat.includes("address"))) return true;
+                    if (category === "medical" && fCat.includes("medical")) return true;
+                    if (category === "travel" && fCat.includes("travel")) return true;
+                    if (category === "other" && !fCat.includes("passport") && !fCat.includes("id ") && !fCat.includes("iban") && !fCat.includes("credit") && !fCat.includes("phone") && !fCat.includes("email") && !fCat.includes("address") && !fCat.includes("medical") && !fCat.includes("travel")) return true;
+                    return false;
+                });
+            } else if (category === "other" && (!file.findings || file.findings.length === 0)) {
+                 // optionally show clean files in "other" or hide them. We will hide them if a specific category is requested and they have no findings.
+                 matchesCategory = false;
+            }
+
+            return matchesSearch && matchesCategory;
+        });
+    }
+
+    if (!filteredFiles || filteredFiles.length === 0) {
+        contentArea.innerHTML = `
+            <div class="glass-card empty-state">
+                <div style="font-size: 50px; margin-bottom: 20px; opacity: 0.5;"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></div>
+                <h3>No Data Found</h3>
+                <p>No documents match your search or filter criteria.</p>
+            </div>
+        `;
+        return;
+    }
+
+    let html = `
+        <div class="section-header">
+            <h2>All User Files & Data (${filteredFiles.length})</h2>
+        </div>
+        <div class="user-data-grid">
+    `;
+
+    filteredFiles.forEach(file => {
+        const hasFindings = file.findings && file.findings.length > 0;
+        
+        let cardStyle = "";
+        let badgeHtml = "";
+        
+        if (hasFindings && file.expired) {
+            cardStyle = "border: 1px solid rgba(234,0,22,0.4); box-shadow: 0 4px 20px rgba(234,0,22,0.1);";
+            badgeHtml = `<span style="font-size: 11px; margin-left:auto; padding:4px 12px; border-radius:12px; background: rgba(234,0,22,0.12); color: #ff4d6a; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">GDPR VIOLATION</span>`;
+        } else if (hasFindings && !file.expired) {
+            cardStyle = "border: 1px solid rgba(245,158,11,0.4);";
+            badgeHtml = `<span style="font-size: 11px; margin-left:auto; padding:4px 12px; border-radius:12px; background: rgba(245,158,11,0.12); color: #f59e0b; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">ACTIVE PII</span>`;
+        } else {
+            badgeHtml = `<span style="font-size: 11px; margin-left:auto; padding:4px 12px; border-radius:12px; background: rgba(16,185,129,0.12); color: #10b981; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">CLEAN</span>`;
+        }
+        
+        const cardId = `file-card-${file.file_id}`;
+        html += `
+            <div class="glass-card data-card" id="${cardId}" style="${cardStyle}">
+                <div style="display: flex; align-items: center; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px; margin-bottom: 10px;">
+                    <h3 style="margin: 0; font-size: 16px;">
+                        <span class="category-icon"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></span> ${escapeHtml(file.file_name)}
+                    </h3>
+                    ${badgeHtml}
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted);">
+                    <strong>Path:</strong> ${escapeHtml(file.file_path)}<br>
+                    <strong>Size:</strong> ${(file.size_bytes / 1024).toFixed(1)} KB<br>
+                    <strong>Modified:</strong> ${file.last_modified ? new Date(file.last_modified).toLocaleDateString() : 'Unknown'}
+                </div>
+                <div style="margin-top: 15px;">
+                    <button class="action-btn" style="padding: 8px 14px; font-size: 12px;" onclick="openDocumentModal('${escapeHtml(file.file_name)}', '${file.file_id}')">Read Document</button>
+                </div>
+        `;
+
+        if (hasFindings) {
+            const sectionBorder = file.expired ? 'rgba(234,0,22,0.1)' : 'rgba(245,158,11,0.1)';
+            const titleColor = file.expired ? '#ff4d6a' : '#f59e0b';
+            
+            html += `<div style="margin-top: 15px; border-top: 1px solid ${sectionBorder}; padding-top: 10px;">
+                        <strong style="color: ${titleColor}; font-size: 13px; display:block; margin-bottom:8px;">Flagged PII Data:</strong>`;
+            
+            file.findings.forEach(finding => {
+                const icon = getCategoryIcon(finding.category);
+                const borderColor = file.expired ? 'var(--accent-red)' : '#f59e0b';
+                html += `
+                    <div style="background: var(--bg-card-hover); padding: 10px; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid ${borderColor};">
+                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px; color: var(--text-primary);">${icon} ${finding.category || "Uncategorized"}</div>
+                        <div class="data-snippet" style="border-left: none; padding: 8px; font-size: 12px; margin-bottom: 6px;">${finding.flagged_snippet || "N/A"}</div>
+                        <div class="data-reasoning" style="font-size: 12px;">${finding.reasoning || "No reasoning provided."}</div>
+                    </div>
+                `;
+            });
+            html += `
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <button class="action-btn" style="padding: 8px 14px; font-size: 12px; background: rgba(255,255,255,0.1);" onclick="extendRetention('${file.file_id}')">Need for a while</button>
+                </div>
+            </div>`;
+        }
+
+        if (file.expired) {
+            html += `
+                <div style="margin-top: 15px; border-top: 1px solid rgba(234,0,22,0.1); padding-top: 15px; display: flex; gap: 10px;">
+                    <button 
+                        onclick="handleExtendRetention('${file.file_id}', '${employeeId}', '${cardId}')"
+                        style="flex: 1; padding: 8px 16px; background: rgba(0,0,0,0.05); color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 8px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px; transition: all 0.3s ease;">
+                        Extend Retention
+                    </button>
+                    <button 
+                        onclick="handleDeleteExpired('${file.file_id}', '${employeeId}', '${cardId}')"
+                        style="flex: 1; padding: 8px 16px; background: var(--accent-blue); color: white; border: none; border-radius: 8px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 700; font-size: 13px; transition: all 0.3s ease; box-shadow: 0 4px 12px var(--accent-blue-soft);">
+                        Delete File (Permanent)
+                    </button>
+                </div>
+            `;
+        }
+
+        html += `</div>`; // Close card
+    });
+
+    html += `</div>`; // Close grid
+
+    // Add Countdown Section
+    html += `
+        <section class="glass-card gdpr-countdown-section" id="countdown-container">
+            <h2>Data Retention Policy</h2>
+            <p>Time remaining until mandatory deletion of this user's data according to GDPR guidelines.</p>
+            
+            <div class="countdown-timer" id="countdown-timer">
+                <div class="time-box">
+                    <span class="time-value" id="time-days">--</span>
+                    <span class="time-label">Days</span>
+                </div>
+                <div class="time-box">
+                    <span class="time-value" id="time-hours">--</span>
+                    <span class="time-label">Hours</span>
+                </div>
+                <div class="time-box">
+                    <span class="time-value" id="time-mins">--</span>
+                    <span class="time-label">Minutes</span>
+                </div>
+                <div class="time-box">
+                    <span class="time-value" id="time-secs">--</span>
+                    <span class="time-label">Seconds</span>
+                </div>
+            </div>
+            
+            <div class="expired-message">
+                RETENTION PERIOD EXPIRED - IMMEDIATE DELETION REQUIRED
+            </div>
+        </section>
+    `;
+
+    contentArea.innerHTML = html;
+
+    if (data.retention_deadline) {
+        startCountdown(new Date(data.retention_deadline));
+    } else {
+        document.getElementById("countdown-timer").innerHTML = `<div style="font-size: 20px; font-weight: 600; color: var(--text-muted);">No deadline set for this data.</div>`;
+    }
+}
+
+function startCountdown(deadline) {
+    if (countdownInterval) clearInterval(countdownInterval);
+    
+    // Statically set the timer values to 00 as requested
+    document.getElementById("time-days").innerText = "00";
+    document.getElementById("time-hours").innerText = "00";
+    document.getElementById("time-mins").innerText = "00";
+    document.getElementById("time-secs").innerText = "00";
+}
+
+function escapeHtml(text) {
+    if (!text) return "";
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Permanent physical deletion endpoint call
+async function handleDeleteExpired(fileId, employeeId, cardElementId) {
+    const isConfirmed = await window.customConfirm("Are you sure you want to PERMANENTLY delete this file from the OS disk and database? This action is irreversible.");
+    if (!isConfirmed) return;
+    
+    try {
+        const response = await fetch(`/api/employee/files/${fileId}/delete-expired`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ employee_id: employeeId })
+        });
+        
+        let errorDetail = "Unknown error";
+        try {
+            const data = await response.json();
+            if (data) {
+                if (typeof data.detail === 'string') {
+                    errorDetail = data.detail;
+                } else if (Array.isArray(data.detail)) {
+                    errorDetail = data.detail.map(err => err.msg).join(', ');
+                } else if (data.message) {
+                    errorDetail = data.message;
+                }
+            }
+        } catch (e) {
+            // response was not JSON or parsing failed
+        }
+        
+        if(response.ok) {
+            alert("File permanently deleted and findings updated successfully!");
+            const element = document.getElementById(cardElementId);
+            if (element) {
+                element.remove();
+            } else {
+                console.warn(`Element with ID ${cardElementId} not found in DOM`);
+            }
+        } else {
+            alert("Failed to delete expired file: " + errorDetail);
+        }
+    } catch (error) {
+        alert("Failed to delete expired file due to connection error: " + error.message);
+    }
+}
+
+async function handleExtendRetention(fileId, employeeId, cardElementId) {
+    const isConfirmed = await window.customConfirm("Are you sure you want to request a 90-day retention extension for this data under GDPR laws?");
+    if (!isConfirmed) return;
+    
+    try {
+        const response = await fetch(`/api/employee/files/${fileId}/extend-retention`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ employee_id: employeeId })
+        });
+        
+        let errorDetail = "Unknown error";
+        try {
+            const data = await response.json();
+            if (data) {
+                if (typeof data.detail === 'string') errorDetail = data.detail;
+                else if (Array.isArray(data.detail)) errorDetail = data.detail.map(err => err.msg).join(', ');
+                else if (data.message) errorDetail = data.message;
+            }
+        } catch (e) {}
+        
+        if(response.ok) {
+            alert("Data retention extended by 90 days successfully.");
+            window.location.reload();
+        } else {
+            alert("Failed to extend retention: " + errorDetail);
+        }
+    } catch (error) {
+        alert("Failed to extend retention due to connection error: " + error.message);
+    }
+}
+
+// Initialize
+searchInput.addEventListener("input", () => {
+    if (allUserData) renderProfile(allUserData);
+});
+
+categoryFilter.addEventListener("change", () => {
+    if (allUserData) renderProfile(allUserData);
+});
+
+loadUserProfile();
+
+async function extendRetention(fileId) {
+    const isConfirmed = await window.customConfirm("Are you sure you want to extend the retention period for this document?");
+    if(!isConfirmed) return;
+    try {
+        const response = await fetch(`/api/admin/extend-retention/${encodeURIComponent(fileId)}`, { method: 'POST' });
+        const res = await response.json();
+        alert(res.message || "Retention extended.");
+    } catch(err) {
+        alert("Failed to extend retention.");
+    }
+}
+
+</script>

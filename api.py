@@ -180,8 +180,15 @@ def _persist_finding(db: Session, f: FindingDC) -> FindingORM:
         existing.reasoning = f.context
         return existing
 
+    # Get the actual file ID from the FileMetadata table
+    from database import FileMetadata
+    filename = f.file_id.replace("local:", "")
+    file_meta = db.query(FileMetadata).filter(FileMetadata.file_path.like(f"%{filename}")).first()
+    actual_file_id = file_meta.id if file_meta else None
+
     row = FindingORM(
         finding_uid=f.finding_id,
+        file_id=actual_file_id,
         file_id_str=f.file_id,
         type=f.type,
         value=f.value,
@@ -267,6 +274,26 @@ async def trigger_scan(req: ScanRequest, db: Session = Depends(get_db)):
         )
 
     # ── Persist to SQLite ────────────────────────────────────────────────────
+    from database import FileMetadata
+    from datetime import datetime, timedelta
+    
+    for file_meta in connector.list_files():
+        existing_fm = db.query(FileMetadata).filter(FileMetadata.file_path == file_meta.path).first()
+        if not existing_fm:
+            try:
+                last_mod = datetime.fromisoformat(file_meta.last_modified)
+            except:
+                last_mod = datetime.now()
+            new_fm = FileMetadata(
+                file_path=file_meta.path,
+                owner_employee_id="BX-17335",
+                size_bytes=file_meta.size_bytes,
+                file_hash=file_meta.content_hash,
+                last_modified=last_mod,
+                retention_deadline=datetime.now() + timedelta(days=200)
+            )
+            db.add(new_fm)
+
     for f in result.findings:
         _persist_finding(db, f)
     db.commit()
@@ -514,7 +541,7 @@ async def review_finding(finding_id: str, req: ReviewRequest, db: Session = Depe
                 file_path = candidate.resolve()
 
         # 2) Move or delete the file
-        archive_dir = Path("mock_drive/archive").resolve()
+        archive_dir = Path("demo_drive_rich/archive").resolve()
         deletion_note = ""
 
         if file_path and file_path.exists():

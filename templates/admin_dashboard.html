@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="/static/css/dashboard.css?v=3">
+<link rel="stylesheet" href="/static/css/dashboard.css?v=6">
 
 <!-- Apply saved theme before paint to avoid flash -->
 <script>
@@ -361,7 +361,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 // Wiring up the 'Resolve' button to your /api/employee/action endpoint
 async function handleDelete(findingId) {
-    if(!confirm("Are you sure you want to mark this issue as resolved?")) return;
+    const isConfirmed = await window.customConfirm("Are you sure you want to mark this issue as resolved?");
+    if(!isConfirmed) return;
     
     try {
         const response = await fetch('/api/employee/action', {
@@ -434,7 +435,7 @@ loadOverviewStats();
 
 
 </script>
-<script src="/static/js/dashboard.js?v=3"></script>
+<script src="/static/js/dashboard.js?v=6"></script>
 
 </body>
 </html>

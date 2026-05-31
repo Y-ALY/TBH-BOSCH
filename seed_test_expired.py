@@ -12,7 +12,7 @@ db = SessionLocal()
 
 try:
     # 2. Create the physical file on disk
-    file_dir = os.path.abspath("./mock_drive")
+    file_dir = os.path.abspath("./demo_drive_rich")
     os.makedirs(file_dir, exist_ok=True)
     file_path = os.path.join(file_dir, "expired_gdpr_file.txt")
     

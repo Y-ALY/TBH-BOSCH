@@ -188,9 +188,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (currentScrollY > lastScrollY && currentScrollY > 60) {
                 // Scrolling down
                 topbar.classList.add("topbar--hidden");
+                document.body.classList.add("topbar-hidden");
             } else {
                 // Scrolling up
                 topbar.classList.remove("topbar--hidden");
+                document.body.classList.remove("topbar-hidden");
             }
             lastScrollY = currentScrollY;
         }, { passive: true });
@@ -328,43 +330,37 @@ window.customConfirm = function(message) {
     return new Promise((resolve) => {
         const dialog = document.createElement('dialog');
         dialog.setAttribute('closedby', 'any'); // enable light dismiss
-        dialog.style.border = '1px solid var(--border-subtle, rgba(255,255,255,0.1))';
-        dialog.style.borderRadius = '16px';
-        dialog.style.padding = '24px';
+        dialog.classList.add('custom-confirm-dialog', 'glass-card');
         
-        // Adaptive styling based on theme
-        const isLight = document.body.classList.contains('light');
-        dialog.style.background = isLight ? '#ffffff' : '#1e1e2e';
-        dialog.style.color = isLight ? '#111827' : '#f3f4f6';
-        dialog.style.boxShadow = '0 25px 50px -12px rgba(0, 0, 0, 0.25)';
-        dialog.style.maxWidth = '400px';
+        // Additional dialog-specific overrides
+        dialog.style.padding = '24px';
+        dialog.style.maxWidth = '420px';
         dialog.style.width = '90%';
         dialog.style.margin = 'auto';
-        dialog.style.backdropFilter = 'blur(10px)';
-        
-        dialog.classList.add('custom-confirm-dialog');
+        dialog.style.color = 'var(--text-primary)';
         
         // CSS for ::backdrop injected locally to dialog
         const style = document.createElement('style');
         style.innerHTML = `
             dialog.custom-confirm-dialog::backdrop {
-                background: rgba(0, 0, 0, 0.6);
-                backdrop-filter: blur(4px);
+                background: rgba(0, 0, 0, 0.5);
+                backdrop-filter: blur(6px);
             }
         `;
         document.head.appendChild(style);
 
         dialog.innerHTML = `
             <form method="dialog">
-                <h3 style="margin-top: 0; margin-bottom: 12px; font-size: 18px; display: flex; align-items: center; gap: 8px; font-family: 'Space Grotesk', sans-serif;">
-                    ⚠️ Confirm Action
+                <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 20px; display: flex; align-items: center; gap: 10px; font-family: 'Space Grotesk', sans-serif; color: var(--text-primary);">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    Confirm Action
                 </h3>
-                <p style="margin-bottom: 24px; font-size: 14px; color: ${isLight ? '#4b5563' : '#9ca3af'}; line-height: 1.5; font-family: 'Inter', sans-serif;">
+                <p style="margin-bottom: 28px; font-size: 15px; color: var(--text-secondary); line-height: 1.6; font-family: 'Inter', sans-serif;">
                     ${message}
                 </p>
                 <div style="display: flex; justify-content: flex-end; gap: 12px;">
-                    <button value="cancel" type="button" id="confirm-cancel-btn" style="padding: 8px 16px; border-radius: 8px; border: 1px solid ${isLight ? '#d1d5db' : '#4b5563'}; background: transparent; color: inherit; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 500; transition: background 0.2s;">Cancel</button>
-                    <button value="confirm" style="padding: 8px 16px; border-radius: 8px; border: none; background: linear-gradient(90deg, #ea0016, #b00010); color: white; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600; box-shadow: 0 4px 12px rgba(234,0,22,0.2); transition: transform 0.2s;">Confirm</button>
+                    <button value="cancel" type="button" id="confirm-cancel-btn" class="action-btn" style="background: transparent; border: 1px solid var(--border-subtle); color: var(--text-primary); padding: 10px 18px;">Cancel</button>
+                    <button value="confirm" class="action-btn" style="background: var(--accent-blue); border: none; color: white; padding: 10px 18px; box-shadow: 0 4px 12px var(--accent-blue-soft);">Confirm</button>
                 </div>
             </form>
         `;
