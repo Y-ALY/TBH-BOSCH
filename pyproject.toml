@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+# Exclude root-level test_script.py which calls exit() at module level.
+# This file is not part of the test suite and should not be collected.
+norecursedirs = ["demo_drive_rich", "data", "sample_docs", "mock_drive", "scripts", "node_modules"]
+addopts = "--ignore=test_script.py"
