@@ -16,3 +16,7 @@ python-multipart>=0.0.9
 # ── Demo / Testing ──
 reportlab>=4.0
 colorlog>=6.8,<7.0
+
+# ── OCR Image Scanning ──
+pytesseract>=0.3.10
+Pillow>=10.0

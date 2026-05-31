@@ -1003,3 +1003,99 @@ def search_findings(
         },
     }
 
+
+# ── OCR Image Scanning ──────────────────────────────────────────────────────
+
+from fastapi import UploadFile, File
+
+# Allowed image MIME types for the OCR endpoint
+_ALLOWED_IMAGE_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/tiff",
+    "image/bmp",
+    "image/webp",
+    "image/gif",
+}
+
+
+@app.post("/api/scan/image")
+async def scan_uploaded_image(file: UploadFile = File(...)):
+    """Upload an image file for OCR text extraction and PII compliance scanning.
+
+    Accepts: PNG, JPEG, TIFF, BMP, WebP, GIF.
+
+    Pipeline:
+        1. Validate MIME type.
+        2. Read file bytes (streamed).
+        3. Delegate to ``src.ocr_scanner.scan_image()`` which handles:
+           - SHA-256 content-addressable cache check
+           - Tesseract OCR (on cache miss)
+           - PII regex + semantic scanning via classifier.py
+           - Immediate memory cleanup of raw bytes
+        4. Return structured JSON response.
+
+    Returns:
+        {
+            "status": "success",
+            "cache_hit": true/false,
+            "file_hash": "sha256hex...",
+            "text": "...extracted text...",
+            "flags": [ { "type": "...", "value": "...", ... } ]
+        }
+    """
+    from fastapi import HTTPException
+
+    # ── MIME type validation ──────────────────────────────────────────────
+    content_type = (file.content_type or "").lower()
+    if content_type not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported file type: '{content_type}'. "
+                f"Allowed: {', '.join(sorted(_ALLOWED_IMAGE_TYPES))}"
+            ),
+        )
+
+    # ── Read file bytes ───────────────────────────────────────────────────
+    try:
+        file_bytes = await file.read()
+    finally:
+        await file.close()
+
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    # ── Delegate to OCR scanner ───────────────────────────────────────────
+    try:
+        from src.ocr_scanner import scan_image
+        result = scan_image(file_bytes)
+    except RuntimeError as exc:
+        # Tesseract not installed
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"OCR processing failed: {str(exc)}",
+        )
+    finally:
+        # Drop the raw bytes reference to free memory immediately
+        del file_bytes
+
+    return result
+
+
+@app.get("/api/scan/image/cache-stats")
+def ocr_cache_stats():
+    """Return basic OCR cache statistics (admin/debug endpoint)."""
+    from src.ocr_scanner import get_cache_stats
+    return get_cache_stats()
+
+
+@app.post("/api/scan/image/clear-cache")
+def ocr_clear_cache():
+    """Flush the OCR result cache (admin endpoint)."""
+    from src.ocr_scanner import clear_cache
+    evicted = clear_cache()
+    return {"status": "success", "evicted_entries": evicted}
+

@@ -53,7 +53,7 @@
 
                 <div class="account-info">
                     <strong>{{ user.first_name }} {{ user.last_name }}</strong>
-                    <span>Employee</span>
+                    <span>{% if user and user.email == 'admin@bosch.com' %}Admin{% else %}Employee{% endif %}</span>
                 </div>
 
             </button>
