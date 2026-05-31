@@ -1,3 +1,18 @@
+# =============================================================================
+# DECISION (Agent 3 - API Boundary Cleanup):
+#   api.py is a SEPARATE FastAPI application for local development and testing.
+#   It is NOT the production entry point.  The single deployable application is
+#   main.py, which now mounts the same scan-related routes via app.routes.scan
+#   and additionally serves the Jinja2 web dashboard.
+#
+#   api.py remains here so that developers can run a lightweight scan-only
+#   server during development or run tests that exercise the dedicated scan API
+#   endpoints.  Both apps share the same database.py models and src/ engine.
+#
+#   Run (local dev):  uvicorn api:app --reload --port 8000
+#   Run (production): uvicorn main:app --reload --port 8000
+# =============================================================================
+
 """FastAPI bridge between the GDPR dashboard frontend and the scanning pipeline.
 
 Endpoints:

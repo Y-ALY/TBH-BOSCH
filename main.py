@@ -1,150 +1,41 @@
+# =============================================================================
+# main.py — TBH-BOSCH Web Dashboard & API
+# =============================================================================
+#
+# DECISION (Agent 3 - API Boundary Cleanup):
+#   main.py is the SINGLE deployable FastAPI application.  It serves the
+#   Jinja2 web dashboard (login, admin, employee views) AND a broad set of
+#   API routes (KPIs, employee management, notifications, search, health).
+#
+#   The dedicated api.py (GDPR Data Discovery API) is a SEPARATE FastAPI
+#   application that remains for local development and testing.  It is NOT
+#   required for production — all scan-related routes that were previously
+#   duplicated in main.py are now served via the app.routes.scan router
+#   mounted below, so a single `uvicorn main:app` process can handle both
+#   dashboard pages and the scan/review API.
+#
+#   Both applications share the same database.py models and src/ scan
+#   engine.  In production, deploy main.py as the primary entry point.
+# =============================================================================
 
 from fastapi import FastAPI, Depends, Request, Form, Response, Cookie
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-
-
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-import database
 from database import get_db, Employee, FileMetadata, Finding, Notification
 
-import os
 from typing import Optional, List, Dict, Any
-
-# Default scan root for the demo. Override with SCAN_ROOT env var.
-# In production (Render), this points to the seeded demo data directory.
-SCAN_ROOT = os.environ.get("SCAN_ROOT", "./demo_drive_rich")
 
 app = FastAPI(title="Bosch GDPR Scan Engine API")
 
-from database import SessionLocal
 
 @app.on_event("startup")
 def startup_event():
-    import json
-    import hashlib
-    from pathlib import Path
-    from datetime import datetime, timedelta
-    from src.connector import LocalSampleRepoConnector
-    
-    db = SessionLocal()
-    try:
-        # We no longer clear the DB tables to preserve the delta state and findings across reboots.
-        # This mitigates the issue of files appearing 'clean' initially.
-        
-        # 1. Load Owner Hints to generate Employees
-        hints_path = Path(SCAN_ROOT) / "owner_hints.json"
-        hints = {}
-        if hints_path.exists():
-            with open(hints_path, "r", encoding="utf-8") as f:
-                hints = json.load(f)
-                
-            # ⚠️ DEMO-ONLY: Hardcoded admin account with a well-known password.
-        # In production: seed initial admin from env vars with a generated password.
-        admin = db.query(Employee).filter(Employee.email == "admin@bosch.com").first()
-        if not admin:
-            admin = Employee(
-                employee_id="BX-ADMIN", email="admin@bosch.com",
-                first_name="Admin", last_name="User",
-                password="password123", department="IT Security", location="Stuttgart"
-            )
-            db.add(admin)
-            db.commit()
+    """Delegate database seeding to app.startup.seed_on_startup."""
+    from app.startup import seed_on_startup
+    seed_on_startup(app)
 
-        # Cache existing employees to completely avoid N+1 queries
-        all_employees = db.query(Employee).all()
-        added_emails = {e.email for e in all_employees}
-        added_emp_ids = {e.employee_id for e in all_employees}
-        email_to_emp_id = {e.email: e.employee_id for e in all_employees}
-
-        new_employees = []
-        for file_name, hint in hints.items():
-            email = hint.get("email", "unknown@bosch.com")
-            if email in added_emails:
-                continue
-
-            emp_id_int = int(hashlib.md5(email.encode()).hexdigest(), 16) % 90000 + 10000
-            emp_id_str = f"BX-{emp_id_int}"
-            while emp_id_str in added_emp_ids:
-                emp_id_int = (emp_id_int - 10000 + 1) % 90000 + 10000
-                emp_id_str = f"BX-{emp_id_int}"
-            
-            added_emp_ids.add(emp_id_str)
-            added_emails.add(email)
-            email_to_emp_id[email] = emp_id_str
-
-            first, last = hint.get("name", "Unknown User").split(" ", 1) if " " in hint.get("name", "") else (hint.get("name", "User"), "")
-            emp = Employee(
-                employee_id=emp_id_str, email=email,
-                first_name=first, last_name=last,
-                password="password123", department=hint.get("department", "Unknown"), location="Unknown"
-            )
-            new_employees.append(emp)
-            db.add(emp)
-        
-        if new_employees:
-            db.commit()
-
-        # 2. Ingest FileMetadata from SCAN_ROOT
-        connector = LocalSampleRepoConnector(repo_path=SCAN_ROOT)
-        files = connector.list_files()
-        
-        # Cache existing file paths
-        existing_file_paths = {f[0] for f in db.query(FileMetadata.file_path).all()}
-        
-        new_metas = []
-        for idx, file_meta in enumerate(files):
-            if file_meta.path in existing_file_paths:
-                continue
-                
-            hint = hints.get(file_meta.file_name, {})
-            email = hint.get("email")
-            owner_id = email_to_emp_id.get(email, "BX-ADMIN") if email else "BX-ADMIN"
-            
-            days_offset = -10 if idx % 3 == 0 else (15 if idx % 3 == 1 else 200)
-            
-            try:
-                last_mod = datetime.fromisoformat(file_meta.last_modified)
-            except:
-                last_mod = datetime.now()
-
-            new_meta = FileMetadata(
-                file_path=file_meta.path,
-                owner_employee_id=owner_id,
-                size_bytes=file_meta.size_bytes,
-                file_hash=file_meta.content_hash,
-                last_modified=last_mod,
-                retention_deadline=datetime.now() + timedelta(days=days_offset)
-            )
-            new_metas.append(new_meta)
-            db.add(new_meta)
-            
-        if new_metas:
-            db.commit()
-        
-        # 3. Cleanup deleted files from the database to keep counts accurate
-        import os
-        all_db_files = db.query(FileMetadata).all()
-        deleted_file_ids = []
-        deleted_files = []
-        for db_file in all_db_files:
-            if not db_file.file_path.startswith("[DELETED]") and not os.path.exists(db_file.file_path):
-                deleted_file_ids.append(db_file.id)
-                deleted_files.append(db_file)
-                
-        if deleted_file_ids:
-            db.query(Finding).filter(Finding.file_id.in_(deleted_file_ids)).delete(synchronize_session=False)
-            for df in deleted_files:
-                db.delete(df)
-            db.commit()
-        
-        print(f"Successfully ingested {len(files)} files into FileMetadata on startup.")
-            
-    except Exception as e:
-        print(f"Error injecting data on startup: {e}")
-    finally:
-        db.close()
 
 app.mount(
     "/static",
@@ -154,7 +45,7 @@ app.mount(
 
 templates = Jinja2Templates(directory="templates")
 
-# ⚠️ DEMO-ONLY: Wildcard CORS allows any origin to call this API.
+# DEMO-ONLY: Wildcard CORS allows any origin to call this API.
 # For production, restrict allow_origins to your frontend's domain(s).
 app.add_middleware(
     CORSMiddleware,
@@ -164,6 +55,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Mount scan-related API routes (extracted from this file) ─────────────────
+from app.routes.scan import router as scan_router
+app.include_router(scan_router)
 
 
 
@@ -196,7 +90,7 @@ def login(
     password: str = Form(...),
     db: Session = Depends(get_db)
 ):
-    # ⚠️ DEMO-ONLY: Plaintext password comparison against DB. No hashing, no rate limiting.
+    # DEMO-ONLY: Plaintext password comparison against DB. No hashing, no rate limiting.
     # See docs/production-readiness.md for production auth requirements.
     user = db.query(Employee).filter(Employee.email == email).first()
 
@@ -211,8 +105,8 @@ def login(
         redirect = RedirectResponse(url="/admin-dashboard", status_code=303)
     else:
         redirect = RedirectResponse(url="/employee-dashboard", status_code=303)
-        
-    # ⚠️ DEMO-ONLY: Unsigned cookie — anyone can forge a session by setting session_emp_id.
+
+    # DEMO-ONLY: Unsigned cookie — anyone can forge a session by setting session_emp_id.
     # For production: use signed sessions (e.g., starlette SessionMiddleware) or JWT tokens.
     redirect.set_cookie(key="session_emp_id", value=user.employee_id)
     return redirect
@@ -222,15 +116,15 @@ from typing import Optional
 
 @app.get("/admin-dashboard")
 def admin_dashboard(
-    request: Request, 
+    request: Request,
     session_emp_id: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ):
     if not session_emp_id:
         return RedirectResponse(url="/")
-        
+
     user = db.query(Employee).filter(Employee.employee_id == session_emp_id).first()
-    
+
     return templates.TemplateResponse(
         request=request,
         name="admin_dashboard.html",
@@ -239,15 +133,15 @@ def admin_dashboard(
 
 @app.get("/admin-database-explorer")
 def admin_database_explorer(
-    request: Request, 
+    request: Request,
     session_emp_id: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ):
     if not session_emp_id:
         return RedirectResponse(url="/")
-        
+
     user = db.query(Employee).filter(Employee.employee_id == session_emp_id).first()
-    
+
     return templates.TemplateResponse(
         request=request,
         name="admin_database_explorer.html",
@@ -256,17 +150,17 @@ def admin_database_explorer(
 
 @app.get("/employee-dashboard")
 def employee_dashboard(
-    request: Request, 
+    request: Request,
     session_emp_id: Optional[str] = Cookie(None), # Grab the cookie
     db: Session = Depends(get_db)
 ):
     # If they have no cookie, kick them back to the login page
     if not session_emp_id:
         return RedirectResponse(url="/")
-        
+
     # Get their specific data
     user = db.query(Employee).filter(Employee.employee_id == session_emp_id).first()
-    
+
     # Pass the user data into the HTML template
     return templates.TemplateResponse(
         request=request,
@@ -308,14 +202,14 @@ def data_points(
 
 @app.get("/user-details/{employee_id}")
 def user_details(
-    employee_id: str, 
+    employee_id: str,
     request: Request,
     session_emp_id: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ):
     if not session_emp_id:
         return RedirectResponse(url="/")
-    
+
     # Resolve name or email to proper BX-XXXXX ID
     resolved_emp = None
     if employee_id:
@@ -353,14 +247,14 @@ from sqlalchemy import func
 
 @app.get("/api/user-details/{employee_id}")
 def get_user_details(
-    employee_id: str, 
+    employee_id: str,
     session_emp_id: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ):
     from fastapi import HTTPException
     if not session_emp_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-        
+
     # Resolve name or email to proper BX-XXXXX ID
     resolved_emp = None
     if employee_id and employee_id != "all":
@@ -393,23 +287,23 @@ def get_user_details(
         user_files = db.query(FileMetadata).all()
     else:
         user_files = db.query(FileMetadata).filter(FileMetadata.owner_employee_id == employee_id).all()
-        
+
     file_results = []
-    
+
     for file in user_files:
         # Skip files that have been physically deleted
         file_path = getattr(file, "file_path", "")
         if file_path.startswith("[DELETED]"):
             continue
-            
+
         file_findings = db.query(Finding).filter(Finding.file_id == file.id).all()
         findings_list = []
-        
+
         for f in file_findings:
             status = getattr(f, "review_status", None) or getattr(f, "status", "pending_review")
             if status == "deleted" or getattr(f, "status", "") == "deleted":
                 continue
-                
+
             findings_list.append({
                 "finding_id": getattr(f, "finding_uid", None) or str(f.id),
                 "category": getattr(f, "category", None) or getattr(f, "type", ""),
@@ -419,12 +313,12 @@ def get_user_details(
                 "status": status,
                 "confidence_score": getattr(f, "confidence", 0.95)
             })
-            
+
         # Defensively handle SQLite date strings vs objects
         ret_deadline = file.retention_deadline
         ret_deadline_str = None
         is_expired = False
-        
+
         if ret_deadline:
             if isinstance(ret_deadline, str):
                 ret_deadline_str = ret_deadline
@@ -446,10 +340,10 @@ def get_user_details(
                     is_expired = parsed_deadline < datetime.now()
                 except Exception:
                     ret_deadline_str = str(ret_deadline)
-        
+
         file_path = getattr(file, "file_path", "")
         file_name = file_path.split("/")[-1] if "/" in file_path else file_path.split("\\")[-1]
-        
+
         last_mod = getattr(file, "last_modified", None)
         last_mod_str = None
         if last_mod:
@@ -460,7 +354,7 @@ def get_user_details(
                     last_mod_str = last_mod.isoformat()
                 except Exception:
                     last_mod_str = str(last_mod)
-        
+
         file_results.append({
             "file_id": str(file.id),
             "file_name": file_name,
@@ -487,37 +381,37 @@ def get_admin_kpis(
     from fastapi import HTTPException
     if session_emp_id != "BX-ADMIN":
         raise HTTPException(status_code=403, detail="Forbidden")
-        
+
     from datetime import datetime, timedelta
-    
+
     # 1. Fetch all files and filter out deleted ones
     all_files = db.query(FileMetadata).all()
     active_files = [f for f in all_files if not getattr(f, "file_path", "").startswith("[DELETED]")]
-    
+
     total_files = len(active_files)
-    
+
     # 2. Total data volume in bytes, converted to GB
     total_bytes = sum(getattr(f, "size_bytes", 0) or 0 for f in active_files)
     total_volume_gb = round(total_bytes / (1024 ** 3), 4) # Convert bytes to GB
-    
+
     # 3. Total files with findings
     active_file_ids = [f.id for f in active_files]
     if active_file_ids:
         flagged_files = db.query(func.count(func.distinct(Finding.file_id))).filter(
             Finding.file_id.in_(active_file_ids),
-            Finding.status != 'deleted', 
+            Finding.status != 'deleted',
             Finding.review_status != 'deleted'
         ).scalar() or 0
     else:
         flagged_files = 0
-    
+
     # 4. Expiration stats
     now = datetime.now()
     thirty_days = now + timedelta(days=30)
-    
+
     expiring_soon = 0
     delete_candidates = 0
-    
+
     for f in active_files:
         deadline = f.retention_deadline
         if deadline:
@@ -528,7 +422,7 @@ def get_admin_kpis(
                     deadline = None
             if deadline and getattr(deadline, 'tzinfo', None):
                 deadline = deadline.replace(tzinfo=None)
-            
+
             if deadline and deadline < now:
                 delete_candidates += 1
             elif deadline and deadline <= thirty_days:
@@ -536,7 +430,7 @@ def get_admin_kpis(
 
     # 5. Get a summary of the most recent findings WITH MASKING applied
     recent_findings = db.query(Finding).order_by(Finding.id.desc()).limit(10).all()
-    
+
     safe_findings = []
     for finding in recent_findings:
         # Get filename
@@ -545,7 +439,7 @@ def get_admin_kpis(
             filename = file_record.file_path.split("/")[-1].split("\\")[-1]
         else:
             filename = finding.file_id_str or "Unknown File"
-            
+
         safe_findings.append({
             "finding_id": finding.id,
             "file_name": filename,
@@ -569,23 +463,23 @@ def get_admin_kpis(
 
 @app.get("/api/admin/employees/search")
 def search_employees(
-    q: str, 
+    q: str,
     session_emp_id: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ):
     from fastapi import HTTPException
     if session_emp_id != "BX-ADMIN":
         raise HTTPException(status_code=403, detail="Forbidden")
-        
+
     if not q:
         return []
-    
+
     q_lower = f"%{q.lower()}%"
     from sqlalchemy import or_, func, desc
-    
+
     # Query employees with LEFT JOIN to files to get file counts.
     # Sort by file_count DESC so employees who actually own files
-    # appear first in the search results — this is the key UX fix
+    # appear first in the search results -- this is the key UX fix
     # that prevents zero-file employees from crowding out results.
     results_raw = (
         db.query(
@@ -607,7 +501,7 @@ def search_employees(
         .limit(50)
         .all()
     )
-    
+
     results = []
     for emp, file_count in results_raw:
         # Count findings across this employee's files
@@ -654,14 +548,14 @@ class RetainDocumentRequest(BaseModel):
 @app.post("/api/admin/retain-document/{file_id}")
 def retain_document(file_id: str, req: RetainDocumentRequest):
     """Mark a document as business-critical with a justification.
-    
+
     The admin provides a reason (e.g., 'active_project'), a project name,
     and optional notes explaining why the flagged data must be retained
     beyond its scheduled GDPR deletion date.
     """
     import logging
     logging.info(
-        "RETENTION JUSTIFICATION — file=%s reason=%s project=%s admin=%s notes=%s",
+        "RETENTION JUSTIFICATION -- file=%s reason=%s project=%s admin=%s notes=%s",
         file_id, req.reason, req.project_name, req.admin_email, req.notes
     )
     return {
@@ -671,7 +565,6 @@ def retain_document(file_id: str, req: RetainDocumentRequest):
         "reason": req.reason,
         "project_name": req.project_name
     }
-
 
 
 
@@ -689,16 +582,16 @@ class ActionRequest(BaseModel):
 
 @app.get("/api/employee/files/{employee_id}")
 def get_employee_files(
-    employee_id: str, 
+    employee_id: str,
     session_emp_id: Optional[str] = Cookie(None),
     db: Session = Depends(get_db)
 ):
     from fastapi import HTTPException
     if not session_emp_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-        
+
     from datetime import datetime
-    
+
     # Resolve name or email to proper BX-XXXXX ID
     resolved_emp = None
     if employee_id:
@@ -729,7 +622,7 @@ def get_employee_files(
     user_files = db.query(FileMetadata).filter(FileMetadata.owner_employee_id == employee_id).all()
     user_files = [f for f in user_files if not getattr(f, "file_path", "").startswith("[DELETED]")]
     user_file_ids = [f.id for f in user_files]
-    
+
     if not user_file_ids:
         return {"message": "No files found for this user.", "findings": []}
 
@@ -746,13 +639,13 @@ def get_employee_files(
             Finding.status == "pending_review",
         )
     ).all()
-    
+
     # 3. Format the response for the frontend
     results = []
     for finding in user_findings:
         # We need the file name to show the user which file has the issue
         file_record = db.query(FileMetadata).filter(FileMetadata.id == finding.file_id).first()
-        
+
         # Calculate if file's retention deadline has expired
         retention_deadline = file_record.retention_deadline
         is_expired = False
@@ -766,7 +659,7 @@ def get_employee_files(
                 if retention_deadline.tzinfo is not None:
                     retention_deadline = retention_deadline.replace(tzinfo=None)
                 is_expired = retention_deadline < datetime.now()
-        
+
         results.append({
             "finding_id": finding.id,
             "file_id": file_record.id,
@@ -781,7 +674,7 @@ def get_employee_files(
             "expired": is_expired,
             "urgency": "IMMEDIATE DELETION REQUIRED" if is_expired else "Action Required"
         })
-        
+
     return {"findings": results}
 
 
@@ -797,10 +690,10 @@ def process_employee_action(request: ActionRequest, db: Session = Depends(get_db
     finding = None
     if isinstance(request.file_id, int) or (isinstance(request.file_id, str) and request.file_id.isdigit()):
         finding = db.query(Finding).filter(Finding.id == int(request.file_id)).first()
-    
+
     if not finding:
         finding = db.query(Finding).filter(Finding.finding_uid == str(request.file_id)).first()
-        
+
     if finding:
         # Determine explicit finding status based on action
         action_mapping = {
@@ -811,12 +704,12 @@ def process_employee_action(request: ActionRequest, db: Session = Depends(get_db
             "explain": "needs_review",
             "resolved": "resolved"
         }
-        
+
         new_status = action_mapping.get(request.action, "resolved")
         finding.status = new_status
         finding.review_status = new_status
         finding.owner_resolved = True
-        
+
         # Explicitly handle distinction between metadata update vs physical deletion
         if request.action == "delete":
             # Physically delete the file from storage if requested
@@ -830,10 +723,10 @@ def process_employee_action(request: ActionRequest, db: Session = Depends(get_db
                         file_meta.file_path = f"[DELETED] {file_path}"
                     except Exception:
                         pass
-        
+
         db.commit()
         return {"status": "success", "message": f"Processed {request.action} on finding {request.file_id}"}
-        
+
     from fastapi import HTTPException
     raise HTTPException(status_code=404, detail=f"Finding {request.file_id} not found")
 
@@ -850,16 +743,16 @@ def delete_expired_file(
     from fastapi import HTTPException
     import os
     from datetime import datetime
-    
+
     # 1. Fetch file metadata
     file_meta = db.query(FileMetadata).filter(FileMetadata.id == file_id).first()
     if not file_meta:
         raise HTTPException(status_code=404, detail="File Not Found in DB")
-        
+
     # 2. Verify ownership
     if file_meta.owner_employee_id != req.employee_id and req.employee_id != "all":
         raise HTTPException(status_code=403, detail="Unauthorized Owner")
-        
+
     # 3. Time Validation
     # Parse retention_deadline if it's a string (defensive check)
     retention_deadline = file_meta.retention_deadline
@@ -869,13 +762,13 @@ def delete_expired_file(
         except ValueError:
             # Fallback parsing
             pass
-            
+
     if isinstance(retention_deadline, datetime) and retention_deadline.tzinfo is not None:
         retention_deadline = retention_deadline.replace(tzinfo=None)
-            
+
     if not retention_deadline or retention_deadline > datetime.now():
         raise HTTPException(status_code=400, detail="File retention deadline has not expired yet")
-        
+
     # 4. Physical Deletion
     file_path = file_meta.file_path
     try:
@@ -885,7 +778,7 @@ def delete_expired_file(
         pass # Gracefully handle if already manually removed
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OS Deletion Error: {str(e)}")
-        
+
     # 5. Database Updates
     try:
         # Update associated Findings
@@ -898,12 +791,12 @@ def delete_expired_file(
         # Update FileMetadata
         if not file_meta.file_path.startswith("[DELETED]"):
             file_meta.file_path = f"[DELETED] {file_path}"
-        
+
         db.commit()
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Database Update Error: {str(e)}")
-        
+
     return {"status": "success", "message": f"File {file_id} deleted successfully"}
 
 class ExtendRetentionRequest(BaseModel):
@@ -917,14 +810,14 @@ def extend_retention(
 ):
     from fastapi import HTTPException
     from datetime import datetime, timedelta
-    
+
     file_meta = db.query(FileMetadata).filter(FileMetadata.id == file_id).first()
     if not file_meta:
         raise HTTPException(status_code=404, detail="File Not Found in DB")
-        
+
     if file_meta.owner_employee_id != req.employee_id and req.employee_id != "all":
         raise HTTPException(status_code=403, detail="Unauthorized Owner")
-        
+
     try:
         # Extend retention by 90 days from now
         file_meta.retention_deadline = datetime.now() + timedelta(days=90)
@@ -932,384 +825,14 @@ def extend_retention(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Database Update Error: {str(e)}")
-        
+
     return {"status": "success", "message": f"Retention extended successfully for file {file_id}"}
-
-from pydantic import BaseModel as PydanticBaseModel
-
-class TriggerScanRequest(PydanticBaseModel):
-    """Optional body for POST /api/admin/trigger-scan."""
-    target_dir: str = SCAN_ROOT
-    previous_scan_id: Optional[str] = None  # e.g. "scan-a1b2c3d4"
-
-
-@app.post("/api/admin/trigger-scan")
-def trigger_manual_scan(
-    req: TriggerScanRequest = TriggerScanRequest(),
-    db: Session = Depends(get_db),
-):
-    """Run a delta-aware scan on a target directory.
-
-    Flow:
-      1. Look up a previous delta state file (by scan_id or 'latest').
-      2. Run a delta comparison to categorise files as Added / Modified / Unchanged.
-      3. Execute the full AI scan pipeline on the target directory.
-      4. Filter findings to only those belonging to Added or Modified files.
-      5. Persist new findings to the SQLite database.
-      6. Save a new delta state snapshot for the next invocation.
-      7. Return a structured response with file categories + new findings.
-    """
-    from pathlib import Path as _Path
-    from src.connector import LocalSampleRepoConnector
-    from src.scanner import run_ai_scan
-    from src.delta import compare_delta, save_state
-
-    target_dir = req.target_dir
-    if not _Path(target_dir).exists():
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail=f"Directory not found: {target_dir}")
-
-    connector = LocalSampleRepoConnector(repo_path=target_dir)
-
-    # ── Optional: AI parser (graceful fallback) ──────────────────────────
-    try:
-        from src.ai_parser import AIParser
-        ai_parser = AIParser()
-    except Exception:
-        ai_parser = None
-
-    # ── Delta comparison ─────────────────────────────────────────────────
-    state_dir = _Path("data/state")
-    state_dir.mkdir(parents=True, exist_ok=True)
-
-    delta_report = None
-    added_ids: set = set()
-    modified_ids: set = set()
-    removed_ids: list = []
-    unchanged_count = 0
-
-    # Resolve previous state path
-    prev_state_path = None
-    if req.previous_scan_id:
-        candidate = state_dir / f"delta_state_{req.previous_scan_id}.json"
-        if candidate.exists():
-            prev_state_path = str(candidate)
-    if prev_state_path is None:
-        latest = state_dir / "latest.json"
-        if latest.exists():
-            prev_state_path = str(latest)
-
-    if prev_state_path:
-        try:
-            delta_report = compare_delta(connector, prev_state_path)
-            added_ids = {f.file_id for f in delta_report.added}
-            modified_ids = {f.file_id for f in delta_report.modified}
-            removed_ids = delta_report.removed
-            unchanged_count = delta_report.unchanged
-        except Exception as exc:
-            # If delta fails, fall through to full scan
-            delta_report = None
-
-    # ── Run the full pipeline ────────────────────────────────────────────
-    scan_result = run_ai_scan(connector, ai_parser=ai_parser, db_session=db)
-
-    # ── Save new delta state ─────────────────────────────────────────────
-    save_state(scan_result, str(state_dir))
-
-    # ── Determine which findings are "new" ───────────────────────────────
-    db_findings_count = db.query(Finding).count()
-    if delta_report is not None and db_findings_count > 0:
-        changed_ids = added_ids | modified_ids
-        new_findings = [f for f in scan_result.findings if f.file_id in changed_ids]
-    else:
-        # First scan ever or DB wiped — everything is new
-        new_findings = scan_result.findings
-        added_ids = {f.file_id for f in connector.list_files()}
-
-    # ── Persist FileMetadata for newly discovered files ──────────────────
-    from datetime import datetime, timedelta
-    for file_meta in connector.list_files():
-        existing_fm = db.query(FileMetadata).filter(FileMetadata.file_path == file_meta.path).first()
-        if not existing_fm:
-            try:
-                last_mod = datetime.fromisoformat(file_meta.last_modified)
-            except:
-                last_mod = datetime.now()
-            new_fm = FileMetadata(
-                file_path=file_meta.path,
-                owner_employee_id="BX-17335", # default fallback if not caught by hints
-                size_bytes=file_meta.size_bytes,
-                file_hash=file_meta.content_hash,
-                last_modified=last_mod,
-                retention_deadline=datetime.now() + timedelta(days=200)
-            )
-            db.add(new_fm)
-            
-    # ── Clean up files missing from the filesystem ───────────────────────
-    import os
-    all_db_files = db.query(FileMetadata).all()
-    for db_file in all_db_files:
-        if not db_file.file_path.startswith("[DELETED]") and not os.path.exists(db_file.file_path):
-            db.query(Finding).filter(Finding.file_id == db_file.id).delete()
-            db.delete(db_file)
-    db.commit()
-
-    # ── Persist new findings to the DB (Optimized with Caching and Bulk Save) ─────────────────
-    # 1. Cache all existing Finding UIDs to prevent duplicate checks
-    existing_finding_uids = {f[0] for f in db.query(Finding.finding_uid).all() if f[0]}
-    
-    # 2. Cache all FileMetadata IDs by filename to prevent repeated file ID queries
-    all_metas = db.query(FileMetadata.id, FileMetadata.file_path).all()
-    meta_id_by_filename = {}
-    for meta_id, file_path in all_metas:
-        if file_path:
-            filename = file_path.split("/")[-1].split("\\")[-1]
-            meta_id_by_filename[filename] = meta_id
-
-    new_finding_rows = []
-    for f in new_findings:
-        if f.finding_id in existing_finding_uids:
-            continue  # skip duplicates
-            
-        filename = f.file_id.replace("local:", "")
-        actual_file_id = meta_id_by_filename.get(filename)
-            
-        row = Finding(
-            finding_uid=f.finding_id,
-            file_id=actual_file_id,
-            file_id_str=f.file_id,
-            type=f.type,
-            value=f.value,
-            field=f.field,
-            context=f.context,
-            risk_level=f.risk_level,
-            confidence=f.confidence,
-            evidence=f.evidence,
-            recommended_action=f.recommended_action,
-            assigned_owner=f.assigned_owner,
-            owner_email=f.owner_email,
-            owner_department=f.owner_department,
-            owner_resolved=f.owner_resolved,
-            escalation_target=f.escalation_target,
-            is_flagged=f.is_flagged,
-            flag_type=f.flag_type,
-            # Legacy columns
-            category=f.type,
-            confidence_score=f.confidence,
-            flagged_snippet=f.value,
-            reasoning=f.context,
-            status="pending_review",
-            review_status="pending_review",
-        )
-        new_finding_rows.append(row)
-        
-    if new_finding_rows:
-        db.bulk_save_objects(new_finding_rows)
-        db.commit()
-
-    # ── Build categorised file lists for the response ────────────────────
-    all_file_ids = {f.file_id for f in connector.list_files()}
-
-    added_files = [
-        {"file_id": fid, "status": "added"}
-        for fid in sorted(added_ids)
-    ]
-    modified_files = [
-        {"file_id": fid, "status": "modified"}
-        for fid in sorted(modified_ids)
-    ]
-    unchanged_files_list = sorted(all_file_ids - added_ids - modified_ids)
-
-    # ── Serialise only new findings for the response ─────────────────────
-    findings_out = [
-        {
-            "finding_id": f.finding_id,
-            "file_id": f.file_id,
-            "type": f.type,
-            "value": f.value,
-            "risk_level": f.risk_level,
-            "confidence": f.confidence,
-            "assigned_owner": f.assigned_owner,
-            "recommended_action": f.recommended_action,
-        }
-        for f in new_findings
-    ]
-
-    return {
-        "status": "success",
-        "scan_id": scan_result.scan_id,
-        "timestamp": scan_result.timestamp,
-        "is_delta": delta_report is not None,
-        "files": {
-            "added": added_files,
-            "modified": modified_files,
-            "unchanged": unchanged_files_list,
-            "removed": removed_ids,
-            "summary": {
-                "added_count": len(added_files),
-                "modified_count": len(modified_files),
-                "unchanged_count": len(unchanged_files_list),
-                "removed_count": len(removed_ids),
-            },
-        },
-        "new_findings": findings_out,
-        "new_findings_count": len(findings_out),
-        "total_findings_in_scan": len(scan_result.findings),
-        "ai_enabled": ai_parser is not None,
-    }
-
-
-# ── Memory-Safe Extraction Pipeline (New) ────────────────────────────────────
-# This endpoint uses the new src/extractor.py module which:
-#   1. Reads files via generators (O(page) memory for PDFs)
-#   2. Uses pre-compiled regex (O(1) compilation cost)
-#   3. Returns a strict JSON contract for Admin + User views
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Cache the latest extraction result in-process to avoid re-scanning
-# for dashboard refreshes.  This is intentionally a module-level dict,
-# not a DB table, so it resets on server restart.
-_latest_extraction_result: dict = {}
-
-
-class TriggerExtractionRequest(PydanticBaseModel):
-    """Body for POST /api/admin/trigger-extraction."""
-    target_dir: str = SCAN_ROOT
-
-
-@app.post("/api/admin/trigger-extraction")
-def trigger_extraction(
-    req: TriggerExtractionRequest = TriggerExtractionRequest(),
-    db: Session = Depends(get_db),
-):
-    """Run the memory-safe extraction pipeline on a target directory.
-
-    This endpoint:
-      1. Loads owner_hints.json for file→owner mapping.
-      2. Calls scan_directory() which processes files ONE AT A TIME
-         using generator-based chunked reading (constant memory).
-      3. Persists new findings to the SQLite database.
-      4. Returns the strict JSON contract:
-         - admin_aggregates: totals for the dashboard KPI blocks.
-         - user_file_details: per-file owner + findings + context.
-
-    The scan handles unlimited data — a 5 TB drive uses the same
-    RAM as a 5 MB folder because files are never fully loaded.
-    """
-    global _latest_extraction_result
-    from pathlib import Path as _Path
-    from src.extractor import scan_directory
-    import json
-
-    target_dir = req.target_dir
-    if not _Path(target_dir).exists():
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail=f"Directory not found: {target_dir}")
-
-    # Load owner hints
-    hints_path = _Path(target_dir) / "owner_hints.json"
-    owner_hints = {}
-    if hints_path.exists():
-        with open(hints_path, "r", encoding="utf-8") as f:
-            owner_hints = json.load(f)
-
-    # ── Run the extraction pipeline (memory-safe, generator-based) ──
-    result = scan_directory(str(target_dir), owner_hints=owner_hints)
-
-    # ── Persist findings to the DB for the employee dashboard ──
-    from datetime import datetime, timedelta
-    import hashlib
-
-    # Cache all existing finding values to prevent duplicates
-    # Cache existing (file_id, finding_value) pairs to prevent duplicates within the same file
-    existing_values = {
-        (f.file_id, f.flagged_snippet) for f in db.query(Finding.file_id, Finding.flagged_snippet).all() if f.flagged_snippet
-    }
-
-    # Cache existing file names for FileMetadata lookup
-    import os
-    all_metas = db.query(database.FileMetadata.id, database.FileMetadata.file_path).all()
-    meta_id_by_name = {os.path.basename(fp): mid for mid, fp in all_metas}
-
-    new_findings_added = 0
-    for file_detail in result.get("user_file_details", []):
-        file_path = file_detail["file_path"]
-        file_name = os.path.basename(file_path)
-        file_id = meta_id_by_name.get(file_name)
-        
-        if not file_id:
-            continue
-
-        for finding in file_detail.get("findings", []):
-            matched_val = finding["matched_value"]
-            if (file_id, matched_val) in existing_values:
-                continue
-            existing_values.add((file_id, matched_val))
-
-            row = Finding(
-                file_id=file_id,
-                category=finding["category"],
-                confidence_score=finding["confidence"],
-                flagged_snippet=matched_val,
-                reasoning=finding["match_context"],
-                status="pending_review",
-                review_status="pending_review",
-                # Extended fields
-                type=finding["category"],
-                value=matched_val,
-                context=finding["match_context"],
-                risk_level=finding["risk_level"],
-                confidence=finding["confidence"],
-                recommended_action=finding["recommended_action"],
-                assigned_owner=file_detail.get("owner", ""),
-                owner_email=file_detail.get("owner_email", ""),
-                is_flagged=True,
-                flag_type="Extractor_Regex",
-            )
-            db.add(row)
-            new_findings_added += 1
-
-    if new_findings_added:
-        db.commit()
-
-    # Cache result for the GET endpoint
-    _latest_extraction_result = result
-
-    # Add DB persistence stats to the response
-    result["db_findings_added"] = new_findings_added
-
-    return result
-
-
-@app.get("/api/admin/extraction-results")
-def get_extraction_results():
-    """Return the latest cached extraction results without re-scanning.
-
-    Use this for dashboard refreshes — it's instant because it reads
-    from the in-process cache rather than re-scanning the filesystem.
-    """
-    if not _latest_extraction_result:
-        return {
-            "admin_aggregates": {
-                "total_scanned_files": 0,
-                "total_size_bytes": 0,
-                "total_size_human": "0 B",
-                "files_with_findings": 0,
-                "total_findings": 0,
-                "findings_by_category": {},
-                "scan_duration_seconds": 0,
-            },
-            "user_file_details": [],
-        }
-    return _latest_extraction_result
-
-
 
 
 @app.post("/api/admin/seed-dummy-data")
 def seed_dummy_data(db: Session = Depends(get_db)):
     """Here is where you plug in your new sample data!"""
-    
+
     # 1. Plug your sample user data here
     user = db.query(Employee).filter(Employee.email == "john.doe@company.com").first()
     if not user:
@@ -1406,7 +929,7 @@ def search_findings(
         )
 
     all_results = query.all()
-    
+
     # Group findings by file to return exactly one entry per file
     grouped_files = {}
     for res in all_results:
@@ -1424,12 +947,12 @@ def search_findings(
                 "assigned_owner": res.assigned_owner or "",
                 "owner_resolved": res.owner_resolved or False,
             }
-        
+
         # Aggregate types
         typ = res.type or res.category or ""
         if typ:
             grouped_files[file_id]["types"].add(typ)
-            
+
         # Determine highest risk
         rl = (res.risk_level or "low").lower()
         curr_risk = grouped_files[file_id]["risk_level"].lower()
@@ -1439,7 +962,7 @@ def search_findings(
     # Format the results
     results = []
     risk_breakdown: Dict[str, int] = {}
-    
+
     for file_id, data in grouped_files.items():
         types_list = list(data["types"])
         if len(types_list) > 1:
@@ -1448,10 +971,10 @@ def search_findings(
             display_type = types_list[0]
         else:
             display_type = ""
-            
+
         rl = data["risk_level"]
         risk_breakdown[rl] = risk_breakdown.get(rl, 0) + 1
-            
+
         results.append({
             "finding_id": data["finding_id"],
             "db_file_id": data["db_file_id"],
@@ -1483,7 +1006,7 @@ import json as _json
 from datetime import datetime as _dt, timedelta as _td
 
 
-class DeletionRequestPayload(PydanticBaseModel):
+class DeletionRequestPayload(BaseModel):
     target_employee_id: str
     file_ids: List[int]
     message: str = ""
@@ -1585,7 +1108,7 @@ def get_compliance_score(employee_id: str, db: Session = Depends(get_db)):
     files = db.query(FileMetadata).filter(
         FileMetadata.owner_employee_id == employee_id
     ).all()
-    
+
     files = [f for f in files if not getattr(f, "file_path", "").startswith("[DELETED]")]
 
     total_files = len(files)
@@ -1660,102 +1183,6 @@ def get_compliance_score(employee_id: str, db: Session = Depends(get_db)):
     }
 
 
-# ── OCR Image Scanning ──────────────────────────────────────────────────────
-
-from fastapi import UploadFile, File
-
-# Allowed image MIME types for the OCR endpoint
-_ALLOWED_IMAGE_TYPES = {
-    "image/png",
-    "image/jpeg",
-    "image/tiff",
-    "image/bmp",
-    "image/webp",
-    "image/gif",
-}
-
-
-@app.post("/api/scan/image")
-async def scan_uploaded_image(file: UploadFile = File(...)):
-    """Upload an image file for OCR text extraction and PII compliance scanning.
-
-    Accepts: PNG, JPEG, TIFF, BMP, WebP, GIF.
-
-    Pipeline:
-        1. Validate MIME type.
-        2. Read file bytes (streamed).
-        3. Delegate to ``src.ocr_scanner.scan_image()`` which handles:
-           - SHA-256 content-addressable cache check
-           - Tesseract OCR (on cache miss)
-           - PII regex + semantic scanning via classifier.py
-           - Immediate memory cleanup of raw bytes
-        4. Return structured JSON response.
-
-    Returns:
-        {
-            "status": "success",
-            "cache_hit": true/false,
-            "file_hash": "sha256hex...",
-            "text": "...extracted text...",
-            "flags": [ { "type": "...", "value": "...", ... } ]
-        }
-    """
-    from fastapi import HTTPException
-
-    # ── MIME type validation ──────────────────────────────────────────────
-    content_type = (file.content_type or "").lower()
-    if content_type not in _ALLOWED_IMAGE_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Unsupported file type: '{content_type}'. "
-                f"Allowed: {', '.join(sorted(_ALLOWED_IMAGE_TYPES))}"
-            ),
-        )
-
-    # ── Read file bytes ───────────────────────────────────────────────────
-    try:
-        file_bytes = await file.read()
-    finally:
-        await file.close()
-
-    if not file_bytes:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-
-    # ── Delegate to OCR scanner ───────────────────────────────────────────
-    try:
-        from src.ocr_scanner import scan_image
-        result = scan_image(file_bytes)
-    except RuntimeError as exc:
-        # Tesseract not installed
-        raise HTTPException(status_code=503, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"OCR processing failed: {str(exc)}",
-        )
-    finally:
-        # Drop the raw bytes reference to free memory immediately
-        del file_bytes
-
-    return result
-
-
-@app.get("/api/scan/image/cache-stats")
-def ocr_cache_stats():
-    '''Return basic OCR cache statistics (admin/debug endpoint).'''
-    from src.ocr_scanner import get_cache_stats
-    return get_cache_stats()
-
-
-@app.post("/api/scan/image/clear-cache")
-def ocr_clear_cache():
-    '''Flush the OCR result cache (admin endpoint).'''
-    from src.ocr_scanner import clear_cache
-    evicted = clear_cache()
-    return {"status": "success", "evicted_entries": evicted}
-
-
 from fastapi.responses import FileResponse
 from fastapi import Cookie
 from typing import Optional
@@ -1768,24 +1195,24 @@ def view_file_content(
 ):
     from fastapi import HTTPException
     import os
-    
+
     if not session_emp_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-        
+
     file_meta = db.query(FileMetadata).filter(FileMetadata.id == file_id).first()
     if not file_meta:
         raise HTTPException(status_code=404, detail="File Not Found")
-        
+
     # ONLY the file owner can view the file. Admin CANNOT view the raw file!
     # This ensures GDPR compliance where employees have the right to access their own data,
     # but admins cannot arbitrarily snoop on raw file contents.
     if file_meta.owner_employee_id != session_emp_id:
         raise HTTPException(status_code=403, detail="Forbidden: You can only view your own files.")
-        
+
     file_path = file_meta.file_path
     if file_path.startswith("[DELETED]") or not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File has been physically deleted.")
-        
+
     return FileResponse(file_path)
 
 
@@ -1801,79 +1228,4 @@ def health_check(db: Session = Depends(get_db)):
         "findings_loaded": db.query(Finding).count(),
         "files_loaded": db.query(FileMetadata).count(),
         "employees_loaded": db.query(Employee).count(),
-    }
-
-
-# ── Review Action ────────────────────────────────────────────────────────────
-# Mirrors api.py's POST /api/findings/{finding_id}/review so the same
-# single uvicorn process can serve both the dashboard and the review API.
-
-from pydantic import BaseModel as ReviewBaseModel
-
-_ALLOWED_REVIEW_ACTIONS = [
-    "retain", "delete", "archive", "mask",
-    "false_positive", "escalate_dpo",
-]
-
-
-class ReviewRequest(ReviewBaseModel):
-    """Payload for POST /api/findings/{finding_id}/review."""
-    action: str
-    reviewer: str = "Admin"
-    reason: str = ""
-
-
-@app.post("/api/findings/{finding_id}/review")
-def review_finding(
-    finding_id: str,
-    req: ReviewRequest,
-    db: Session = Depends(get_db),
-):
-    """Record a human review action on a finding."""
-    from fastapi import HTTPException as HTTPEx
-    from datetime import datetime as dt
-
-    if req.action not in _ALLOWED_REVIEW_ACTIONS:
-        raise HTTPEx(
-            status_code=422,
-            detail=f"Invalid action '{req.action}'. Allowed: {_ALLOWED_REVIEW_ACTIONS}",
-        )
-
-    # Locate finding by finding_uid or integer id
-    finding = db.query(Finding).filter(Finding.finding_uid == finding_id).first()
-    if finding is None:
-        try:
-            finding = db.query(Finding).filter(Finding.id == int(finding_id)).first()
-        except (ValueError, TypeError):
-            pass
-    if finding is None:
-        raise HTTPEx(status_code=404, detail=f"Finding '{finding_id}' not found.")
-
-    now = dt.now().isoformat()
-    finding.review_action = req.action
-    finding.reviewer = req.reviewer
-    finding.reviewed_at = now
-    finding.recommended_action = req.action
-
-    _action_status_map = {
-        "retain": "retained",
-        "delete": "deleted",
-        "archive": "archived",
-        "mask": "masked",
-        "false_positive": "false_positive",
-        "escalate_dpo": "escalated",
-    }
-    new_state = _action_status_map.get(req.action, req.action)
-    finding.status = new_state
-    finding.review_status = new_state
-    finding.owner_resolved = True
-
-    db.commit()
-
-    return {
-        "status": "success",
-        "finding_id": finding_id,
-        "action": req.action,
-        "reviewer": req.reviewer,
-        "reviewed_at": now,
     }
