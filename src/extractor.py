@@ -303,7 +303,7 @@ def _read_text_chunks(
 def read_file_chunks(file_path: str) -> Generator[str, None, None]:
     """Universal file reader — dispatches by extension.
 
-    Supports: .pdf, .docx, .txt, .csv, .log, .json, .xml, .html, .md,
+    Supports: .pdf, .docx, .txt, .csv, .log, .json, .jsonl, .xml, .html, .md,
     and any other text-readable file.  Binary files that can't be decoded
     are silently skipped with a warning yield.
 

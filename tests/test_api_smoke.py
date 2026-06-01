@@ -195,6 +195,40 @@ class TestMainAppPages:
         finally:
             db.close()
 
+    def test_intake_upload_supports_jsonl(self, main_test_client, engine):
+        from database import FileMetadata, Finding
+
+        main_test_client.cookies.set("session_emp_id", "BX-ADMIN")
+        jsonl_payload = (
+            b'{"event":"export","email":"jsonl.owner@bosch.com"}\n'
+            b'{"event":"payroll","iban":"DE89 3704 0044 0532 0130 00"}\n'
+        )
+
+        response = main_test_client.post(
+            "/api/admin/intake/upload",
+            files=[
+                (
+                    "files",
+                    ("audit_events.jsonl", jsonl_payload, "application/x-ndjson"),
+                )
+            ],
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["admin_aggregates"]["total_scanned_files"] == 1
+        assert data["admin_aggregates"]["total_findings"] >= 2
+
+        db = sessionmaker(bind=engine)()
+        try:
+            file_row = db.query(FileMetadata).filter(FileMetadata.file_path.like("%audit_events.jsonl")).first()
+            assert file_row is not None
+            finding_types = {
+                f.type for f in db.query(Finding).filter(Finding.file_id == file_row.id).all()
+            }
+            assert {"email", "iban"}.issubset(finding_types)
+        finally:
+            db.close()
+
 
 # =========================================================================
 # api.py -- scan API routes

@@ -277,7 +277,7 @@
             <span class="eyebrow">Scan Intake</span>
             <h2>Connect a source, scan it, then analyze the results here.</h2>
             <p>
-                Upload a batch of files or paste a local/shared source path. Results are written into the dashboard database for KPI review, owner drilldown, and retention actions.
+                Upload a batch of files or paste a local/shared source path. JSONL, CSV, text, PDF, Office, and log sources are written into the dashboard database for KPI review, owner drilldown, and retention actions.
             </p>
         </div>
 
@@ -288,7 +288,7 @@
 
         <div id="uploadIntake" class="intake-mode active">
             <input type="file" id="sourceUploadInput" multiple
-                   accept=".txt,.csv,.log,.json,.xml,.html,.md,.pdf,.docx,.xlsx,.xls,image/png,image/jpeg,image/tiff,image/bmp,image/webp,image/gif,application/pdf"
+                   accept=".txt,.csv,.log,.json,.jsonl,.xml,.html,.md,.pdf,.docx,.xlsx,.xls,image/png,image/jpeg,image/tiff,image/bmp,image/webp,image/gif,application/pdf"
                    class="upload-file-input" />
             <button id="scanUploadBtn" class="explore-btn" onclick="scanUploadedSources()" disabled>
                 Start Scan
