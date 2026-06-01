@@ -278,6 +278,8 @@ def _run_background_scan(
     mode: str,
     ai_mode: str,
     strict_hash: bool,
+    source_type: str = "local",
+    connection_config: dict = None,
 ) -> None:
     """Execute a scan in a background thread and update the ScanJob record."""
     db = SessionLocal()
@@ -294,11 +296,32 @@ def _run_background_scan(
         db.commit()
 
         # ── Set up connector and bulk writer ────────────────────────────
-        # This path always scans the local folder it was given. External
-        # sources (Google Drive / SharePoint / OneDrive) are ingested via
-        # _run_ingest_job in main.py, not here — so we no longer branch on
-        # the active connection (doing so ignored folder_path).
-        connector = LocalSampleRepoConnector(repo_path=str(folder_path))
+        connection_config = connection_config or {}
+        if source_type == "googledrive":
+            from src.google_drive import GoogleDriveConnector
+            connector = GoogleDriveConnector(
+                credentials_path="mock",
+                shared_drive_id=connection_config.get("shared_drive_id")
+            )
+        elif source_type == "onedrive":
+            from src.microsoft_graph import OneDriveConnector
+            connector = OneDriveConnector(
+                tenant_id=connection_config.get("tenant_id", "mock"),
+                client_id="mock",
+                client_secret="mock",
+                user_id=connection_config.get("user_id", "")
+            )
+        elif source_type == "sharepoint":
+            from src.microsoft_graph import SharePointConnector
+            connector = SharePointConnector(
+                tenant_id=connection_config.get("tenant_id", "mock"),
+                client_id="mock",
+                client_secret="mock",
+                site_id=connection_config.get("site_id", ""),
+                drive_id=connection_config.get("drive_id", "")
+            )
+        else:
+            connector = LocalSampleRepoConnector(repo_path=str(folder_path))
 
         writer = BulkWriter(db, batch_size=500)
 

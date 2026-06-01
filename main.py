@@ -318,8 +318,21 @@ def get_user_details(
 
     if employee_id == "all":
         user_files = db.query(FileMetadata).all()
+        all_findings = db.query(Finding).all()
     else:
         user_files = db.query(FileMetadata).filter(FileMetadata.owner_employee_id == employee_id).all()
+        all_findings = db.query(Finding).join(
+            FileMetadata, Finding.file_id == FileMetadata.id
+        ).filter(
+            FileMetadata.owner_employee_id == employee_id,
+            ~FileMetadata.file_path.startswith("[DELETED]")
+        ).all()
+        
+    findings_by_file = {}
+    for finding in all_findings:
+        findings_by_file.setdefault(finding.file_id, []).append(finding)
+        # Also map string IDs just in case
+        findings_by_file.setdefault(str(finding.file_id), []).append(finding)
         
     file_results = []
     
@@ -329,7 +342,7 @@ def get_user_details(
         if file_path.startswith("[DELETED]"):
             continue
             
-        file_findings = db.query(Finding).filter(Finding.file_id == file.id).all()
+        file_findings = findings_by_file.get(file.id, [])
         findings_list = []
         
         for f in file_findings:
@@ -512,16 +525,29 @@ def search_employees(
     q_lower = f"%{q.lower()}%"
     from sqlalchemy import or_, func, desc
     
-    # Query employees with LEFT JOIN to files to get file counts.
-    # Sort by file_count DESC so employees who actually own files
-    # appear first in the search results — this is the key UX fix
-    # that prevents zero-file employees from crowding out results.
+    findings_subq = (
+        db.query(
+            FileMetadata.owner_employee_id.label("employee_id"),
+            func.count(Finding.id).label("findings_count")
+        )
+        .join(Finding, Finding.file_id == FileMetadata.id)
+        .filter(
+            ~FileMetadata.file_path.startswith("[DELETED]"),
+            Finding.status != 'deleted',
+            Finding.review_status != 'deleted'
+        )
+        .group_by(FileMetadata.owner_employee_id)
+        .subquery()
+    )
+
     results_raw = (
         db.query(
             Employee,
             func.count(FileMetadata.id).label("file_count"),
+            func.coalesce(findings_subq.c.findings_count, 0).label("findings_count")
         )
         .outerjoin(FileMetadata, (FileMetadata.owner_employee_id == Employee.employee_id) & ~FileMetadata.file_path.startswith("[DELETED]"))
+        .outerjoin(findings_subq, findings_subq.c.employee_id == Employee.employee_id)
         .filter(
             or_(
                 func.lower(Employee.first_name).like(q_lower),
@@ -531,29 +557,14 @@ def search_employees(
                 func.lower(Employee.first_name + " " + Employee.last_name).like(q_lower),
             )
         )
-        .group_by(Employee.id)
+        .group_by(Employee.id, findings_subq.c.findings_count)
         .order_by(desc("file_count"), Employee.last_name)
         .limit(50)
         .all()
     )
     
     results = []
-    for emp, file_count in results_raw:
-        # Count findings across this employee's files
-        findings_count = 0
-        if file_count > 0:
-            emp_file_ids = [
-                f.id for f in db.query(FileMetadata.id)
-                .filter(FileMetadata.owner_employee_id == emp.employee_id, ~FileMetadata.file_path.startswith("[DELETED]"))
-                .all()
-            ]
-            if emp_file_ids:
-                findings_count = db.query(Finding).filter(
-                    Finding.file_id.in_(emp_file_ids),
-                    Finding.status != 'deleted',
-                    Finding.review_status != 'deleted'
-                ).count()
-
+    for emp, file_count, findings_count in results_raw:
         results.append({
             "employee_id": emp.employee_id,
             "first_name": emp.first_name,
@@ -879,214 +890,34 @@ def trigger_manual_scan(
     req: TriggerScanRequest = TriggerScanRequest(),
     db: Session = Depends(get_db),
 ):
-    """Run a delta-aware scan on a target directory.
-
-    Flow:
-      1. Look up a previous delta state file (by scan_id or 'latest').
-      2. Run a delta comparison to categorise files as Added / Modified / Unchanged.
-      3. Execute the full AI scan pipeline on the target directory.
-      4. Filter findings to only those belonging to Added or Modified files.
-      5. Persist new findings to the SQLite database.
-      6. Save a new delta state snapshot for the next invocation.
-      7. Return a structured response with file categories + new findings.
-    """
-    from pathlib import Path as _Path
-    from src.connector import LocalSampleRepoConnector
-    from src.scanner import run_ai_scan
-    from src.delta import compare_delta, save_state
-
-    target_dir = req.target_dir
-    if not _Path(target_dir).exists():
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail=f"Directory not found: {target_dir}")
-
-    connector = LocalSampleRepoConnector(repo_path=target_dir)
-
-    # ── Optional: AI parser (graceful fallback) ──────────────────────────
-    try:
-        from src.ai_parser import AIParser
-        ai_parser = AIParser()
-    except Exception:
-        ai_parser = None
-
-    # ── Delta comparison ─────────────────────────────────────────────────
-    state_dir = _Path("data/state")
-    state_dir.mkdir(parents=True, exist_ok=True)
-
-    delta_report = None
-    added_ids: set = set()
-    modified_ids: set = set()
-    removed_ids: list = []
-    unchanged_count = 0
-
-    # Resolve previous state path
-    prev_state_path = None
-    if req.previous_scan_id:
-        candidate = state_dir / f"delta_state_{req.previous_scan_id}.json"
-        if candidate.exists():
-            prev_state_path = str(candidate)
-    if prev_state_path is None:
-        latest = state_dir / "latest.json"
-        if latest.exists():
-            prev_state_path = str(latest)
-
-    if prev_state_path:
-        try:
-            delta_report = compare_delta(connector, prev_state_path)
-            added_ids = {f.file_id for f in delta_report.added}
-            modified_ids = {f.file_id for f in delta_report.modified}
-            removed_ids = delta_report.removed
-            unchanged_count = delta_report.unchanged
-        except Exception as exc:
-            # If delta fails, fall through to full scan
-            delta_report = None
-
-    # ── Run the full pipeline ────────────────────────────────────────────
-    scan_result = run_ai_scan(connector, ai_parser=ai_parser, db_session=db)
-
-    # ── Save new delta state ─────────────────────────────────────────────
-    save_state(scan_result, str(state_dir))
-
-    # ── Determine which findings are "new" ───────────────────────────────
-    db_findings_count = db.query(Finding).count()
-    if delta_report is not None and db_findings_count > 0:
-        changed_ids = added_ids | modified_ids
-        new_findings = [f for f in scan_result.findings if f.file_id in changed_ids]
-    else:
-        # First scan ever or DB wiped — everything is new
-        new_findings = scan_result.findings
-        added_ids = {f.file_id for f in connector.list_files()}
-
-    # ── Persist FileMetadata for newly discovered files ──────────────────
-    from datetime import datetime, timedelta
-    for file_meta in connector.list_files():
-        existing_fm = db.query(FileMetadata).filter(FileMetadata.file_path == file_meta.path).first()
-        if not existing_fm:
-            try:
-                last_mod = datetime.fromisoformat(file_meta.last_modified)
-            except:
-                last_mod = datetime.now()
-            new_fm = FileMetadata(
-                file_path=file_meta.path,
-                owner_employee_id="BX-17335", # default fallback if not caught by hints
-                size_bytes=file_meta.size_bytes,
-                file_hash=file_meta.content_hash,
-                last_modified=last_mod,
-                retention_deadline=datetime.now() + timedelta(days=200)
-            )
-            db.add(new_fm)
-            
-    # ── Clean up files missing from the filesystem ───────────────────────
-    import os
-    all_db_files = db.query(FileMetadata).all()
-    for db_file in all_db_files:
-        if not db_file.file_path.startswith("[DELETED]") and not os.path.exists(db_file.file_path):
-            db.query(Finding).filter(Finding.file_id == db_file.id).delete()
-            db.delete(db_file)
+    """Run a fast streaming scan in the background."""
+    scan_id = f"scan-{uuid.uuid4().hex[:8]}"
+    job = ScanJobORM(
+        scan_id=scan_id,
+        status="pending",
+        options_json=json.dumps({"mode": "full", "ai_mode": "layered", "strict_hash": False}),
+        created_at=datetime.now().isoformat()
+    )
+    db.add(job)
     db.commit()
 
-    # ── Persist new findings to the DB (Optimized with Caching and Bulk Save) ─────────────────
-    # 1. Cache all existing Finding UIDs to prevent duplicate checks
-    existing_finding_uids = {f[0] for f in db.query(Finding.finding_uid).all() if f[0]}
-    
-    # 2. Cache all FileMetadata IDs by filename to prevent repeated file ID queries
-    all_metas = db.query(FileMetadata.id, FileMetadata.file_path).all()
-    meta_id_by_filename = {}
-    for meta_id, file_path in all_metas:
-        if file_path:
-            filename = file_path.split("/")[-1].split("\\")[-1]
-            meta_id_by_filename[filename] = meta_id
-
-    new_finding_rows = []
-    for f in new_findings:
-        if f.finding_id in existing_finding_uids:
-            continue  # skip duplicates
-            
-        filename = f.file_id.replace("local:", "")
-        actual_file_id = meta_id_by_filename.get(filename)
-            
-        row = Finding(
-            finding_uid=f.finding_id,
-            file_id=actual_file_id,
-            file_id_str=f.file_id,
-            type=f.type,
-            value=f.value,
-            field=f.field,
-            context=f.context,
-            risk_level=f.risk_level,
-            confidence=f.confidence,
-            evidence=f.evidence,
-            recommended_action=f.recommended_action,
-            assigned_owner=f.assigned_owner,
-            owner_email=f.owner_email,
-            owner_department=f.owner_department,
-            owner_resolved=f.owner_resolved,
-            escalation_target=f.escalation_target,
-            is_flagged=f.is_flagged,
-            flag_type=f.flag_type,
-            # Legacy columns
-            category=f.type,
-            confidence_score=f.confidence,
-            flagged_snippet=f.value,
-            reasoning=f.context,
-            status="pending_review",
-            review_status="pending_review",
-        )
-        new_finding_rows.append(row)
-        
-    if new_finding_rows:
-        db.bulk_save_objects(new_finding_rows)
-        db.commit()
-
-    # ── Build categorised file lists for the response ────────────────────
-    all_file_ids = {f.file_id for f in connector.list_files()}
-
-    added_files = [
-        {"file_id": fid, "status": "added"}
-        for fid in sorted(added_ids)
-    ]
-    modified_files = [
-        {"file_id": fid, "status": "modified"}
-        for fid in sorted(modified_ids)
-    ]
-    unchanged_files_list = sorted(all_file_ids - added_ids - modified_ids)
-
-    # ── Serialise only new findings for the response ─────────────────────
-    findings_out = [
-        {
-            "finding_id": f.finding_id,
-            "file_id": f.file_id,
-            "type": f.type,
-            "value": f.value,
-            "risk_level": f.risk_level,
-            "confidence": f.confidence,
-            "assigned_owner": f.assigned_owner,
-            "recommended_action": f.recommended_action,
-        }
-        for f in new_findings
-    ]
+    import threading
+    threading.Thread(
+        target=_run_background_scan,
+        kwargs={
+            "scan_id": scan_id,
+            "folder_path": req.target_dir,
+            "mode": "full",
+            "ai_mode": "layered",
+            "strict_hash": False
+        },
+        daemon=True,
+    ).start()
 
     return {
         "status": "success",
-        "scan_id": scan_result.scan_id,
-        "timestamp": scan_result.timestamp,
-        "is_delta": delta_report is not None,
-        "files": {
-            "added": added_files,
-            "modified": modified_files,
-            "unchanged": unchanged_files_list,
-            "removed": removed_ids,
-            "summary": {
-                "added_count": len(added_files),
-                "modified_count": len(modified_files),
-                "unchanged_count": len(unchanged_files_list),
-                "removed_count": len(removed_ids),
-            },
-        },
-        "new_findings": findings_out,
-        "new_findings_count": len(findings_out),
-        "total_findings_in_scan": len(scan_result.findings),
-        "ai_enabled": ai_parser is not None,
+        "message": "Scan started in background",
+        "scan_id": scan_id
     }
 
 
@@ -1740,42 +1571,6 @@ def _link_from_config(source_type: str, cfg: dict) -> str | None:
     return None
 
 
-def _run_ingest_job(scan_id: str, link: str, source_label: str) -> None:
-    """Background worker: fetch a public JSON link and ingest it into the DB."""
-    from database import SessionLocal
-    from src.public_json_ingest import fetch_public_json, ingest_records
-
-    db = SessionLocal()
-    try:
-        job = db.query(ScanJobORM).filter(ScanJobORM.scan_id == scan_id).first()
-        if job:
-            job.status = "running"
-            job.started_at = datetime.now().isoformat()
-            db.commit()
-
-        records = fetch_public_json(link)
-        result = ingest_records(db, records, source_label=source_label)
-
-        if job:
-            job.status = "completed"
-            job.completed_at = datetime.now().isoformat()
-            job.total_files = result["files"]
-            job.files_scanned = result["files"]
-            job.files_error = result["errors"]
-            job.total_findings = result["findings"]
-            db.commit()
-    except Exception as exc:
-        db.rollback()
-        job = db.query(ScanJobORM).filter(ScanJobORM.scan_id == scan_id).first()
-        if job:
-            job.status = "failed"
-            job.error_message = str(exc)
-            job.completed_at = datetime.now().isoformat()
-            db.commit()
-    finally:
-        db.close()
-
-
 @app.post("/api/connect", response_model=ConnectSummary)
 async def connect_source(req: ConnectRequest, db: Session = Depends(get_db)):
     active_conn = db.query(ActiveConnectionORM).first()
@@ -1798,21 +1593,17 @@ async def connect_source(req: ConnectRequest, db: Session = Depends(get_db)):
     db.add(job)
     db.commit()
 
-    link = _link_from_config(req.source_type, req.connection_config or {})
-
-    if req.source_type in ("googledrive", "onedrive", "sharepoint") and link:
-        # Real ingestion: fetch the public JSON link and load it into the DB.
-        threading.Thread(
-            target=_run_ingest_job,
-            args=(scan_id, link, req.source_type),
-            daemon=True,
-        ).start()
-        return ConnectSummary(source_type=req.source_type, message="Connected and ingestion started.")
-
-    # No link (mock / local): fall back to the local sample scan.
     threading.Thread(
         target=_run_background_scan,
-        args=(scan_id, "./strict_drive", "full", "layered", False),
+        kwargs={
+            "scan_id": scan_id,
+            "folder_path": "./strict_drive",
+            "mode": "full",
+            "ai_mode": "layered",
+            "strict_hash": False,
+            "source_type": req.source_type,
+            "connection_config": req.connection_config or {}
+        },
         daemon=True,
     ).start()
     return ConnectSummary(source_type=req.source_type, message="Connected and scan started.")

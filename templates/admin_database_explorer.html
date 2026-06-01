@@ -1063,17 +1063,6 @@
             const q = document.getElementById('adminSearchInput').value.trim();
             if (!q) return;
 
-            // Trigger a background scan as requested so files are parsed
-            try {
-                fetch('/api/admin/trigger-scan', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ target_dir: './strict_drive' })
-                }).catch(err => console.error("Background scan fetch error:", err));
-            } catch (err) {
-                console.error("Background scan trigger error:", err);
-            }
-
             const resArea = document.getElementById('adminSearchResults');
             resArea.innerHTML = `
         <div style="text-align: center; padding: 30px; color: var(--text-muted);">

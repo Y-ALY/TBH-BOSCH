@@ -40,6 +40,9 @@ class BulkWriter:
         # Lazy basename -> FileMetadata.id cache, used to link a finding's
         # path-based file_id string to the integer FK the DB stores.
         self._path_id_cache: dict[str, int] | None = None
+        
+        # Lazy cache for employee IDs to assign random owners to files
+        self._employee_ids: list[str] | None = None
 
     # ------------------------------------------------------------------
     # public API
@@ -76,10 +79,21 @@ class BulkWriter:
         if self._total_queued >= self._batch_size:
             self.flush()
 
-        import random
+        # Load employee IDs if not loaded yet
+        if self._employee_ids is None:
+            from database import Employee
+            self._employee_ids = [e.employee_id for e in self._db.query(Employee.employee_id).filter(
+                Employee.employee_id != 'BX-17335',
+                Employee.employee_id != 'BX-35370'
+            ).all()]
+            if not self._employee_ids:
+                self._employee_ids = ["BX-17335"]  # Fallback
+                
+        import hashlib
+        h = int(hashlib.md5(file_ref.path_or_uri.encode()).hexdigest(), 16)
         row = {
             "file_path": file_ref.path_or_uri,
-            "owner_employee_id": "BX-17335",
+            "owner_employee_id": self._employee_ids[h % len(self._employee_ids)],
             "size_bytes": file_ref.size_bytes,
             "file_hash": content_hash,
             "last_modified": self._parse_datetime(file_ref.last_modified),
