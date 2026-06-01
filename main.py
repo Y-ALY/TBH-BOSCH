@@ -65,6 +65,15 @@ def startup_event():
                 if os.path.exists(f):
                     os.remove(f)
             print("Cache restored successfully.")
+            db = SessionLocal()
+            try:
+                from path_helpers import rewrite_strict_drive_paths
+
+                n = rewrite_strict_drive_paths(db)
+                if n:
+                    print(f"Normalized {n} file paths for this server.")
+            finally:
+                db.close()
         else:
             db = SessionLocal()
             try:

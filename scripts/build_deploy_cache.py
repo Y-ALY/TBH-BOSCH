@@ -118,6 +118,9 @@ def main() -> int:
     shutil.copy2(src, dst)
 
     db = SessionLocal()
+    from path_helpers import rewrite_strict_drive_paths
+
+    rewrite_strict_drive_paths(db, ROOT)
     files = db.query(FileMetadata).count()
     findings = db.query(Finding).count()
     db.close()
