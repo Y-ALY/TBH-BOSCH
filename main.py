@@ -29,8 +29,8 @@ def startup_event():
     from api import _run_background_scan
     import seed_json_data
     
-    cache_path = "bosch_gdpr.cache.db"
-    db_path = "bosch_gdpr.db"
+    cache_path = os.getenv("CACHE_PATH", "bosch_gdpr.cache.db")
+    db_path = os.getenv("DB_PATH", "bosch_gdpr.db")
     
     from database import ActiveConnection
     try:
@@ -1671,8 +1671,8 @@ async def disconnect_source(db: Session = Depends(get_db)):
         db.rollback()
         print(f"Warning: Could not delete active_conn, likely locked: {e}")
         
-    cache_path = "bosch_gdpr.cache.db"
-    db_path = "bosch_gdpr.db"
+    cache_path = os.getenv("CACHE_PATH", "bosch_gdpr.cache.db")
+    db_path = os.getenv("DB_PATH", "bosch_gdpr.db")
     
     if os.path.exists(cache_path):
         # We must fully close the session to release any SQLite file locks
