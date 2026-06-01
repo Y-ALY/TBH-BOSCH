@@ -497,61 +497,60 @@ def get_admin_kpis(
         
     from datetime import datetime, timedelta
     
-    # 1. Fetch all files and filter out deleted ones
-    all_files = db.query(FileMetadata).all()
-    active_files = [f for f in all_files if not getattr(f, "file_path", "").startswith("[DELETED]")]
-    
-    total_files = len(active_files)
-    
-    # 2. Total data volume in bytes, converted to GB
-    total_bytes = sum(getattr(f, "size_bytes", 0) or 0 for f in active_files)
+    active_file_filter = ~FileMetadata.file_path.startswith("[DELETED]")
+
+    total_files = db.query(func.count(FileMetadata.id)).filter(active_file_filter).scalar() or 0
+    total_bytes = db.query(func.coalesce(func.sum(FileMetadata.size_bytes), 0)).filter(active_file_filter).scalar() or 0
     total_volume_gb = round(total_bytes / (1024 ** 3), 4) # Convert bytes to GB
     
-    # 3. Total files with findings
-    active_file_ids = [f.id for f in active_files]
-    if active_file_ids:
-        flagged_files = db.query(func.count(func.distinct(Finding.file_id))).filter(
-            Finding.file_id.in_(active_file_ids),
-            Finding.status != 'deleted', 
-            Finding.review_status != 'deleted'
-        ).scalar() or 0
-    else:
-        flagged_files = 0
+    flagged_files = (
+        db.query(func.count(func.distinct(Finding.file_id)))
+        .join(FileMetadata, Finding.file_id == FileMetadata.id)
+        .filter(
+            active_file_filter,
+            Finding.status != "deleted",
+            Finding.review_status != "deleted",
+        )
+        .scalar()
+        or 0
+    )
     
-    # 4. Expiration stats
     now = datetime.now()
     thirty_days = now + timedelta(days=30)
-    
-    expiring_soon = 0
-    delete_candidates = 0
-    
-    for f in active_files:
-        deadline = f.retention_deadline
-        if deadline:
-            if isinstance(deadline, str):
-                try:
-                    deadline = datetime.fromisoformat(deadline)
-                except ValueError:
-                    deadline = None
-            if deadline and getattr(deadline, 'tzinfo', None):
-                deadline = deadline.replace(tzinfo=None)
-            
-            if deadline and deadline < now:
-                delete_candidates += 1
-            elif deadline and deadline <= thirty_days:
-                expiring_soon += 1
 
-    # 5. Get a summary of the most recent findings WITH MASKING applied
-    recent_findings = db.query(Finding).order_by(Finding.id.desc()).limit(10).all()
+    delete_candidates = (
+        db.query(func.count(FileMetadata.id))
+        .filter(active_file_filter, FileMetadata.retention_deadline < now)
+        .scalar()
+        or 0
+    )
+    expiring_soon = (
+        db.query(func.count(FileMetadata.id))
+        .filter(
+            active_file_filter,
+            FileMetadata.retention_deadline >= now,
+            FileMetadata.retention_deadline <= thirty_days,
+        )
+        .scalar()
+        or 0
+    )
+
+    recent_findings = (
+        db.query(Finding, FileMetadata.file_path)
+        .outerjoin(FileMetadata, Finding.file_id == FileMetadata.id)
+        .filter(
+            Finding.status != "deleted",
+            Finding.review_status != "deleted",
+        )
+        .order_by(Finding.id.desc())
+        .limit(10)
+        .all()
+    )
     
     safe_findings = []
-    for finding in recent_findings:
-        # Get filename
-        file_record = db.query(FileMetadata).filter(FileMetadata.id == finding.file_id).first()
-        if file_record and file_record.file_path:
-            filename = file_record.file_path.split("/")[-1].split("\\")[-1]
-        else:
-            filename = finding.file_id_str or "Unknown File"
+    for finding, file_path in recent_findings:
+        filename_source = file_path or finding.file_id_str or "Unknown File"
+        filename = filename_source.split("/")[-1].split("\\")[-1]
             
         safe_findings.append({
             "finding_id": finding.id,
