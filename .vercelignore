@@ -1,0 +1,39 @@
+# Local virtual environments
+.venv/
+.venv314/
+venv/
+env/
+
+# Runtime databases and local caches
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+__pycache__/
+.pytest_cache/
+
+# Large/generated scan corpora and uploads
+strict_drive/
+onedrive_gdpr_pdf_test_set/
+onedrive_mixed_test_set_render/
+data/uploads/
+data/state/
+data/sample_pdfs/
+mock_drive/
+
+# Local-only logs, profiling, and scratch outputs
+*.log
+*.pid
+benchmark_full.txt
+profile_results.txt
+profile_subset_results.txt
+classified_results.json
+scan_results.json
+diff.txt
+
+# Development-only files
+.DS_Store
+.claude/
+clean_script*.js
+temp_script.js
+gemini-code-*.py
