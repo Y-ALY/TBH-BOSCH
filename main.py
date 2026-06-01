@@ -37,7 +37,14 @@ def startup_event():
         hints = {}
         if hints_path.exists():
             with open(hints_path, "r", encoding="utf-8") as f:
-                hints = json.load(f)
+                for line in f:
+                    if line.strip():
+                        try:
+                            obj = json.loads(line)
+                            filename = obj.get("file_path", "").split("/")[-1]
+                            hints[filename] = obj
+                        except Exception:
+                            pass
                 
         # Always ensure admin exists
         admin = db.query(Employee).filter(Employee.email == "admin@bosch.com").first()
@@ -84,16 +91,19 @@ def startup_event():
         if new_employees:
             db.commit()
 
-        # 2. Ingest FileMetadata from strict_drive
+        # 2. Ingest FileMetadata from strict_drive (streaming to handle 100k+ files)
         connector = LocalSampleRepoConnector(repo_path="./strict_drive")
-        files = connector.list_files()
         
         # Cache existing file paths
         existing_file_paths = {f[0] for f in db.query(FileMetadata.file_path).all()}
         
         new_metas = []
-        for idx, file_meta in enumerate(files):
-            if file_meta.path in existing_file_paths:
+        added_count = 0
+        total_discovered = 0
+        
+        for idx, file_meta in enumerate(connector.iter_files()):
+            total_discovered += 1
+            if file_meta.path_or_uri in existing_file_paths:
                 continue
                 
             hint = hints.get(file_meta.file_name, {})
@@ -108,16 +118,22 @@ def startup_event():
                 last_mod = datetime.now()
 
             new_meta = FileMetadata(
-                file_path=file_meta.path,
+                file_path=file_meta.path_or_uri,
                 owner_employee_id=owner_id,
                 size_bytes=file_meta.size_bytes,
-                file_hash=file_meta.content_hash,
+                file_hash=file_meta.etag_or_version,
                 last_modified=last_mod,
                 retention_deadline=datetime.now() + timedelta(days=days_offset)
             )
             new_metas.append(new_meta)
             db.add(new_meta)
+            added_count += 1
             
+            # Batch commit to handle hundreds of thousands of files efficiently
+            if len(new_metas) >= 5000:
+                db.commit()
+                new_metas = []
+                
         if new_metas:
             db.commit()
         
@@ -137,7 +153,7 @@ def startup_event():
                 db.delete(df)
             db.commit()
         
-        print(f"Successfully ingested {len(files)} files into FileMetadata on startup.")
+        print(f"Startup complete: Discovered {total_discovered} files. Added {added_count} new files into DB.")
             
     except Exception as e:
         print(f"Error injecting data on startup: {e}")
