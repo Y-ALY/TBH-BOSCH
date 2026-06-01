@@ -10,6 +10,7 @@ from .models import ParsedDocument, ScanResult, Finding
 from .pdf_parser import parse_pdf
 from .classifier import extract_entities, classify_context
 from .owner import assign_owners
+import re
 
 
 # ---------------------------------------------------------------------------
@@ -17,33 +18,32 @@ from .owner import assign_owners
 # ---------------------------------------------------------------------------
 
 _FIELD_PATTERNS = [
-    # (regex, label)
-    (r'(?im)^\s*(Company|Firma)\s*:\s*(.+)$', "Company"),
-    (r'(?im)^\s*(Address|Adresse|Anschrift)\s*:\s*(.+)$', "Address"),
-    (r'(?im)^\s*(Contact|Kontakt)\s*:\s*(.+)$', "Contact"),
-    (r'(?im)^\s*(Tax ID|Steuer-ID|USt-IdNr\.?|VAT)\s*:\s*(.+)$', "Tax ID"),
-    (r'(?im)^\s*(Employee|Mitarbeiter|Name)\s*:\s*(.+)$', "Employee"),
-    (r'(?im)^\s*(Amount|Betrag|Summe|Total)\s*:\s*(.+)$', "Amount"),
-    (r'(?im)^\s*(Date|Datum)\s*:\s*(.+)$', "Date"),
-    (r'(?im)^\s*(Manager|Vorgesetzter)\s*:\s*(.+)$', "Manager"),
-    (r'(?im)^\s*(System)\s*:\s*(.+)$', "System"),
-    (r'(?im)^\s*(Access Level|Zugriffsstufe)\s*:\s*(.+)$', "Access Level"),
-    (r'(?im)^\s*(Signature|Unterschrift)\s*:\s*(.+)$', "Signature"),
-    (r'(?im)^\s*(Department|Abteilung)\s*:\s*(.+)$', "Department"),
-    (r'(?im)^\s*(Email|E-Mail)\s*:\s*(.+)$', "Email"),
-    (r'(?im)^\s*(Phone|Telefon|Tel\.?)\s*:\s*(.+)$', "Phone"),
-    (r'(?im)^\s*(Participant|Teilnehmer)\s*:\s*(.+)$', "Participant"),
-    (r'(?im)^\s*(Course|Kurs|Training)\s*:\s*(.+)$', "Course"),
-    (r'(?im)^\s*(Score|Punktzahl|Rating|Bewertung)\s*:\s*(.+)$', "Score"),
+    # (compiled_regex, label)
+    (re.compile(r'(?im)^\s*(Company|Firma)\s*:\s*(.+)$'), "Company"),
+    (re.compile(r'(?im)^\s*(Address|Adresse|Anschrift)\s*:\s*(.+)$'), "Address"),
+    (re.compile(r'(?im)^\s*(Contact|Kontakt)\s*:\s*(.+)$'), "Contact"),
+    (re.compile(r'(?im)^\s*(Tax ID|Steuer-ID|USt-IdNr\.?|VAT)\s*:\s*(.+)$'), "Tax ID"),
+    (re.compile(r'(?im)^\s*(Employee|Mitarbeiter|Name)\s*:\s*(.+)$'), "Employee"),
+    (re.compile(r'(?im)^\s*(Amount|Betrag|Summe|Total)\s*:\s*(.+)$'), "Amount"),
+    (re.compile(r'(?im)^\s*(Date|Datum)\s*:\s*(.+)$'), "Date"),
+    (re.compile(r'(?im)^\s*(Manager|Vorgesetzter)\s*:\s*(.+)$'), "Manager"),
+    (re.compile(r'(?im)^\s*(System)\s*:\s*(.+)$'), "System"),
+    (re.compile(r'(?im)^\s*(Access Level|Zugriffsstufe)\s*:\s*(.+)$'), "Access Level"),
+    (re.compile(r'(?im)^\s*(Signature|Unterschrift)\s*:\s*(.+)$'), "Signature"),
+    (re.compile(r'(?im)^\s*(Department|Abteilung)\s*:\s*(.+)$'), "Department"),
+    (re.compile(r'(?im)^\s*(Email|E-Mail)\s*:\s*(.+)$'), "Email"),
+    (re.compile(r'(?im)^\s*(Phone|Telefon|Tel\.?)\s*:\s*(.+)$'), "Phone"),
+    (re.compile(r'(?im)^\s*(Participant|Teilnehmer)\s*:\s*(.+)$'), "Participant"),
+    (re.compile(r'(?im)^\s*(Course|Kurs|Training)\s*:\s*(.+)$'), "Course"),
+    (re.compile(r'(?im)^\s*(Score|Punktzahl|Rating|Bewertung)\s*:\s*(.+)$'), "Score"),
 ]
 
 
 def _extract_fields(text: str) -> dict[str, str]:
     """Extract labeled fields from document text using regex."""
-    import re
     fields: dict[str, str] = {}
     for pattern, label in _FIELD_PATTERNS:
-        match = re.search(pattern, text)
+        match = pattern.search(text)
         if match:
             value = match.group(match.lastindex or 2).strip()
             if value and label not in fields:

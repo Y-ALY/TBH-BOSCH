@@ -80,13 +80,6 @@ def _scan_pdf_chunk(file_path: str, start_page: int, end_page: int) -> Tuple[lis
         findings = extract_entities(full_text, pages)
         fields = _extract_fields(full_text)
         doc_type = classify_context(full_text, fields)
-        
-        # We also run the PII Scanner directly here to offload the main process
-        scanner = _get_worker_scanner()
-        pii_matches = scanner.scan(full_text)
-        # findings is just a list, we can append or convert if necessary.
-        # However, extract_entities usually returns the model's findings. 
-        # For this pipeline, we just rely on the existing extract_entities logic.
 
     return findings, fields, doc_type, len(full_text), needs_ocr
 

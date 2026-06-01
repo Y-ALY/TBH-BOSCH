@@ -99,11 +99,11 @@ _TYPE_KEYWORDS: dict[str, list[str]] = {
 }
 
 
-_SEMANTIC_PATTERNS: list[tuple[str, str, str, str]] = [
-    # (regex, type, risk_level, action)
-    (r'(?i)\b(?:call|phone|telephone|mobile|contact(?:ed)?)\s+(?:[A-Z][a-z]+\s+)?(?:at|on)?\s*((?:\+\d{1,3}[-.\s]?\d{2,4}[-.\s]?\d{3,5}[-.\s]?\d{3,5}|\(\d{2,4}\)\s?\d{3,4}[-.\s]\d{3,5}|\d{2,4}[-.\s]\d{3,4}[-.\s]\d{3,5}))\b', "phone", "medium", "mask"),
-    (r'(?i)\b(?:password|pwd|passcode|secret)\s*[:=]\s*([^\s]{5,20})\b', "password", "high", "mask"),
-    (r'(?i)\b(?:ssn|social security)\s*[:=]?\s*([\d\-]{9,11})\b', "ssn", "high", "delete"),
+_SEMANTIC_PATTERNS: list[tuple[re.Pattern, str, str, str]] = [
+    # (compiled_regex, type, risk_level, action)
+    (re.compile(r'(?i)\b(?:call|phone|telephone|mobile|contact(?:ed)?)\s+(?:[A-Z][a-z]+\s+)?(?:at|on)?\s*((?:\+\d{1,3}[-.\s]?\d{2,4}[-.\s]?\d{3,5}[-.\s]?\d{3,5}|\(\d{2,4}\)\s?\d{3,4}[-.\s]\d{3,5}|\d{2,4}[-.\s]\d{3,4}[-.\s]\d{3,5}))\b', re.MULTILINE), "phone", "medium", "mask"),
+    (re.compile(r'(?i)\b(?:password|pwd|passcode|secret)\s*[:=]\s*([^\s]{5,20})\b', re.MULTILINE), "password", "high", "mask"),
+    (re.compile(r'(?i)\b(?:ssn|social security)\s*[:=]?\s*([\d\-]{9,11})\b', re.MULTILINE), "ssn", "high", "delete"),
 ]
 
 def extract_entities(
@@ -193,18 +193,20 @@ def extract_entities(
             else:
                 merged_ranges.append(r)
 
-    # Convert to list of chars to mask out ranges (O(N) operation)
-    text_chars = list(full_text)
+    # Fast substring concatenation for masking ranges
+    parts = []
+    last_idx = 0
     for start_idx, end_idx in merged_ranges:
-        for i in range(start_idx, end_idx):
-            text_chars[i] = ' '
-    
-    remaining_text = "".join(text_chars)
+        parts.append(full_text[last_idx:start_idx])
+        parts.append(" " * (end_idx - start_idx))
+        last_idx = end_idx
+    parts.append(full_text[last_idx:])
+    remaining_text = "".join(parts)
 
     # ── Pass 2: Lightweight Semantic / Contextual Check ──
     # Runs ONLY on the text that wasn't already caught by standard Regex
     for pattern, ftype, risk, action in _SEMANTIC_PATTERNS:
-        for match in re.finditer(pattern, remaining_text, re.MULTILINE):
+        for match in pattern.finditer(remaining_text):
             value = match.group(1).strip()
             if not value:
                 continue
