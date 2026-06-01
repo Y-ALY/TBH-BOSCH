@@ -37,6 +37,10 @@ class BulkWriter:
         self._total_write_time_ms: float = 0.0
         self._total_rows_written: int = 0
 
+        # Lazy basename -> FileMetadata.id cache, used to link a finding's
+        # path-based file_id string to the integer FK the DB stores.
+        self._path_id_cache: dict[str, int] | None = None
+
     # ------------------------------------------------------------------
     # public API
     # ------------------------------------------------------------------
@@ -111,6 +115,10 @@ class BulkWriter:
             self._db.bulk_insert_mappings(FileMetadataORM, self._file_states)
             rows_written += len(self._file_states)
             self._file_states.clear()
+            # New files just landed — drop the cache so finding resolution
+            # below rebuilds it (and sees these new file ids).
+            self._db.flush()
+            self._path_id_cache = None
 
         # ── Findings (with upsert) ──────────────────────────────────────
         if self._findings:
@@ -201,10 +209,34 @@ class BulkWriter:
             return datetime.now()
 
     @staticmethod
-    def _finding_to_row(f: Finding) -> dict:
+    def _basename(path_or_id: str) -> str:
+        """Bare file name from a path or 'local:<name>' / 'googledrive:<id>' id."""
+        s = path_or_id or ""
+        if ":" in s and not s[1:3] == ":\\":  # strip a source prefix like local:
+            # keep drive letters (C:\) intact; only strip known scheme prefixes
+            for prefix in ("local:", "googledrive:", "onedrive:", "sharepoint:"):
+                if s.startswith(prefix):
+                    s = s[len(prefix):]
+                    break
+        return s.replace("\\", "/").split("/")[-1]
+
+    def _resolve_file_id(self, finding_file_id: str) -> int | None:
+        """Map a finding's path-based file_id to the integer FileMetadata.id."""
+        if not finding_file_id:
+            return None
+        if self._path_id_cache is None:
+            from database import FileMetadata as FileMetadataORM
+            self._path_id_cache = {}
+            for fid, fpath in self._db.query(
+                FileMetadataORM.id, FileMetadataORM.file_path
+            ).all():
+                self._path_id_cache[self._basename(fpath)] = fid
+        return self._path_id_cache.get(self._basename(finding_file_id))
+
+    def _finding_to_row(self, f: Finding) -> dict:
         return {
             "finding_uid": f.finding_id,
-            "file_id": None,
+            "file_id": self._resolve_file_id(f.file_id),
             "file_id_str": f.file_id,
             "type": f.type,
             "value": f.value,

@@ -30,8 +30,6 @@ from sqlalchemy.orm import Session
 
 # ── Internal pipeline imports ────────────────────────────────────────────────
 from src.connector import LocalSampleRepoConnector
-from src.google_drive import GoogleDriveConnector
-from src.microsoft_graph import OneDriveConnector, SharePointConnector
 from src.scanner import run_ai_scan, run_full_scan
 from src.models import (
     Finding as FindingDC,
@@ -48,7 +46,6 @@ from database import (
     FileMetadata as FileMetadataORM,
     ScanJob as ScanJobORM,
     ScanError as ScanErrorORM,
-    ActiveConnection as ActiveConnectionORM,
     SessionLocal,
 )
 
@@ -297,34 +294,11 @@ def _run_background_scan(
         db.commit()
 
         # ── Set up connector and bulk writer ────────────────────────────
-        active_conn = db.query(ActiveConnectionORM).first()
-        
-        if active_conn and active_conn.source_type == "googledrive":
-            cfg = json.loads(active_conn.connection_config)
-            connector = GoogleDriveConnector(
-                credentials_path=cfg.get("credentials_path", "mock"),
-                shared_drive_id=cfg.get("shared_drive_id")
-            )
-        elif active_conn and active_conn.source_type == "onedrive":
-            cfg = json.loads(active_conn.connection_config)
-            connector = OneDriveConnector(
-                tenant_id=cfg.get("tenant_id", "mock"),
-                client_id=cfg.get("client_id", "mock"),
-                client_secret=cfg.get("client_secret", "mock"),
-                user_id=cfg.get("user_id", "mock")
-            )
-        elif active_conn and active_conn.source_type == "sharepoint":
-            cfg = json.loads(active_conn.connection_config)
-            connector = SharePointConnector(
-                tenant_id=cfg.get("tenant_id", "mock"),
-                client_id=cfg.get("client_id", "mock"),
-                client_secret=cfg.get("client_secret", "mock"),
-                site_id=cfg.get("site_id", "mock"),
-                drive_id=cfg.get("drive_id", "mock")
-            )
-        else:
-            # Fallback to local
-            connector = LocalSampleRepoConnector(repo_path=str(folder_path))
+        # This path always scans the local folder it was given. External
+        # sources (Google Drive / SharePoint / OneDrive) are ingested via
+        # _run_ingest_job in main.py, not here — so we no longer branch on
+        # the active connection (doing so ignored folder_path).
+        connector = LocalSampleRepoConnector(repo_path=str(folder_path))
 
         writer = BulkWriter(db, batch_size=500)
 
@@ -334,16 +308,12 @@ def _run_background_scan(
         db.commit()
 
         file_refs = []
-        is_mock = False
-        if "GoogleDriveConnector" in str(type(connector)):
-            is_mock = True
-        
         for file_meta in files:
             fr = FileRef(
                 file_id=file_meta.file_id,
                 file_name=file_meta.file_name,
                 path_or_uri=file_meta.path,
-                source_type="googledrive" if is_mock else "local",
+                source_type="local",
                 size_bytes=file_meta.size_bytes,
                 last_modified=file_meta.last_modified,
                 etag_or_version="",
@@ -357,29 +327,12 @@ def _run_background_scan(
         
         def handle_result(r: FileScanResult):
             for f in r.findings:
+                # extract_entities() leaves file_id empty ("set by scanner") —
+                # stamp it here so the finding can be linked to its file row.
+                if not f.file_id:
+                    f.file_id = r.file_ref.file_id
                 writer.add_finding(f)
-                
-            if r.file_ref.source_type == "googledrive":
-                try:
-                    file_idx = int(r.file_ref.file_id.split("-")[-1])
-                    if file_idx % 6 == 0:  # ~25 files flagged
-                        import uuid
-                        from src.models import Finding
-                        writer.add_finding(Finding(
-                            finding_id=f"mock-{uuid.uuid4().hex[:8]}",
-                            file_id=r.file_ref.file_id,
-                            type="Mock Passport",
-                            value="G-12345678",
-                            field="text",
-                            context="Mock passport match detected in test file.",
-                            risk_level="high",
-                            confidence=0.99,
-                            evidence="Mock testing data",
-                            recommended_action="review"
-                        ))
-                except:
-                    pass
-                
+
         metrics = run_streaming_scan(
             connector,
             iter(file_refs),
@@ -425,7 +378,7 @@ def _run_background_scan(
         )
         
         # Cache creation logic for the massive local scan
-        if metrics.files_scanned > 50000 and not is_mock:
+        if metrics.files_scanned > 50000:
             import shutil
             from database import engine
             try:
@@ -540,97 +493,11 @@ app.add_middleware(
 # ═══════════════════════════════════════════════════════════════════════════════
 # Connections
 # ═══════════════════════════════════════════════════════════════════════════════
-
-@app.post("/api/connect", response_model=ConnectSummary)
-async def connect_source(req: ConnectRequest, db: Session = Depends(get_db)):
-    """Configure external data source and trigger a scan."""
-    
-    # Save the connection configuration
-    active_conn = db.query(ActiveConnectionORM).first()
-    if not active_conn:
-        active_conn = ActiveConnectionORM()
-        db.add(active_conn)
-    
-    active_conn.source_type = req.source_type
-    active_conn.connection_config = json.dumps(req.connection_config)
-    db.commit()
-    
-    logger.info("New connection configured: %s", req.source_type)
-    
-    # We could trigger a scan automatically here, but to avoid circular logic
-    # we'll just return success and let the frontend trigger the scan if needed,
-    # or trigger a background scan directly.
-    # Let's trigger a full scan immediately using the new connector.
-    
-    scan_id = f"scan-{uuid.uuid4().hex[:8]}"
-    now = datetime.now().isoformat()
-    options = {
-        "mode": "full",
-        "ai_mode": "layered",
-        "strict_hash": False,
-    }
-    job = ScanJobORM(
-        scan_id=scan_id,
-        status="pending",
-        options_json=json.dumps(options),
-        created_at=now,
-    )
-    db.add(job)
-    db.commit()
-
-    thread = threading.Thread(
-        target=_run_background_scan,
-        args=(scan_id, "./sample_docs", "full", "layered", False), # dummy folder for external
-        daemon=True,
-    )
-    thread.start()
-
-    return ConnectSummary(
-        source_type=req.source_type,
-        message="Connected and scan started."
-    )
-
-@app.post("/api/disconnect", response_model=ConnectSummary)
-async def disconnect_source(db: Session = Depends(get_db)):
-    """Remove external data source configuration."""
-    active_conn = db.query(ActiveConnectionORM).first()
-    if active_conn:
-        db.delete(active_conn)
-        db.commit()
-        
-    logger.info("External connection removed. Reverted to local.")
-    
-    # Start a scan on the local sample repo to revert data
-    scan_id = f"scan-{uuid.uuid4().hex[:8]}"
-    now = datetime.now().isoformat()
-    job = ScanJobORM(
-        scan_id=scan_id,
-        status="pending",
-        options_json=json.dumps({"mode": "full", "ai_mode": "layered", "strict_hash": False}),
-        created_at=now,
-    )
-    db.add(job)
-    db.commit()
-
-    thread = threading.Thread(
-        target=_run_background_scan,
-        args=(scan_id, "./sample_docs", "full", "layered", False),
-        daemon=True,
-    )
-    thread.start()
-    
-    return ConnectSummary(
-        source_type="local",
-        message="Disconnected and local scan started."
-    )
-
-@app.get("/api/connection_status")
-async def get_connection_status(db: Session = Depends(get_db)):
-    """Get the current active connection."""
-    active_conn = db.query(ActiveConnectionORM).first()
-    if active_conn:
-        return {"source_type": active_conn.source_type}
-    return {"source_type": "local"}
+# NOTE: The live /api/connect, /api/disconnect and /api/connection_status
+# handlers live in main.py (the app that is actually served). This module's
+# `app` is never mounted, so duplicate handlers here were dead code and have
+# been removed. _run_background_scan, ConnectRequest and ConnectSummary above
+# are still imported by main.py.
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # POST /api/scan

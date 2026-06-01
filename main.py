@@ -32,6 +32,7 @@ def startup_event():
     cache_path = "bosch_gdpr.cache.db"
     db_path = "bosch_gdpr.db"
     
+    from database import ActiveConnection
     try:
         if os.path.exists(cache_path):
             print("Cache found! Restoring instant cached database...")
@@ -45,14 +46,25 @@ def startup_event():
         else:
             db = SessionLocal()
             try:
-                if db.query(FileMetadata).count() == 0:
+                has_data = db.query(FileMetadata).count() > 0
+                is_connected = db.query(ActiveConnection).first() is not None
+
+                if has_data or is_connected:
+                    # Preserve existing data (incl. appended external imports)
+                    # across restarts — do NOT auto-scan over it.
+                    print(
+                        f"Startup: data already present "
+                        f"(files={db.query(FileMetadata).count()}, "
+                        f"connected={is_connected}). Skipping auto-scan."
+                    )
+                else:
                     print("No cache found. Database is empty. Seeding baseline data and starting full background scan...")
                     seed_json_data.seed_data()
-                    
+
                     scan_id = f"scan-{uuid.uuid4().hex[:8]}"
                     db.add(ScanJob(scan_id=scan_id, status="pending"))
                     db.commit()
-                    
+
                     print(f"Starting 104k file scan (ID: {scan_id}) in background...")
                     threading.Thread(
                         target=_run_background_scan,
@@ -1715,6 +1727,55 @@ from datetime import datetime
 from database import ActiveConnection as ActiveConnectionORM, ScanJob as ScanJobORM
 from api import _run_background_scan, ConnectRequest, ConnectSummary
 
+def _link_from_config(source_type: str, cfg: dict) -> str | None:
+    """Pull the public share link out of the modal's per-source config field.
+
+    The Connect modal sends the link in shared_drive_id (Drive),
+    user_id (OneDrive) or site_id (SharePoint). Mock configs carry "mock".
+    """
+    for key in ("shared_drive_id", "url", "user_id", "site_id", "drive_id"):
+        val = (cfg.get(key) or "").strip()
+        if val and val.lower() != "mock":
+            return val
+    return None
+
+
+def _run_ingest_job(scan_id: str, link: str, source_label: str) -> None:
+    """Background worker: fetch a public JSON link and ingest it into the DB."""
+    from database import SessionLocal
+    from src.public_json_ingest import fetch_public_json, ingest_records
+
+    db = SessionLocal()
+    try:
+        job = db.query(ScanJobORM).filter(ScanJobORM.scan_id == scan_id).first()
+        if job:
+            job.status = "running"
+            job.started_at = datetime.now().isoformat()
+            db.commit()
+
+        records = fetch_public_json(link)
+        result = ingest_records(db, records, source_label=source_label)
+
+        if job:
+            job.status = "completed"
+            job.completed_at = datetime.now().isoformat()
+            job.total_files = result["files"]
+            job.files_scanned = result["files"]
+            job.files_error = result["errors"]
+            job.total_findings = result["findings"]
+            db.commit()
+    except Exception as exc:
+        db.rollback()
+        job = db.query(ScanJobORM).filter(ScanJobORM.scan_id == scan_id).first()
+        if job:
+            job.status = "failed"
+            job.error_message = str(exc)
+            job.completed_at = datetime.now().isoformat()
+            db.commit()
+    finally:
+        db.close()
+
+
 @app.post("/api/connect", response_model=ConnectSummary)
 async def connect_source(req: ConnectRequest, db: Session = Depends(get_db)):
     active_conn = db.query(ActiveConnectionORM).first()
@@ -1723,12 +1784,10 @@ async def connect_source(req: ConnectRequest, db: Session = Depends(get_db)):
         db.add(active_conn)
     active_conn.source_type = req.source_type
     active_conn.connection_config = json.dumps(req.connection_config)
-    
-    from database import Finding, FileMetadata
-    db.query(Finding).delete()
-    db.query(FileMetadata).delete()
     db.commit()
-    
+
+    # Connecting an external source APPENDS to the current dataset (no wipe).
+
     scan_id = f"scan-{uuid.uuid4().hex[:8]}"
     job = ScanJobORM(
         scan_id=scan_id,
@@ -1739,12 +1798,23 @@ async def connect_source(req: ConnectRequest, db: Session = Depends(get_db)):
     db.add(job)
     db.commit()
 
+    link = _link_from_config(req.source_type, req.connection_config or {})
+
+    if req.source_type in ("googledrive", "onedrive", "sharepoint") and link:
+        # Real ingestion: fetch the public JSON link and load it into the DB.
+        threading.Thread(
+            target=_run_ingest_job,
+            args=(scan_id, link, req.source_type),
+            daemon=True,
+        ).start()
+        return ConnectSummary(source_type=req.source_type, message="Connected and ingestion started.")
+
+    # No link (mock / local): fall back to the local sample scan.
     threading.Thread(
         target=_run_background_scan,
         args=(scan_id, "./strict_drive", "full", "layered", False),
         daemon=True,
     ).start()
-
     return ConnectSummary(source_type=req.source_type, message="Connected and scan started.")
 
 @app.post("/api/disconnect", response_model=ConnectSummary)
