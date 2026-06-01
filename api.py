@@ -337,7 +337,13 @@ def _run_background_scan(
         from src.models import ScanOptions, FileScanResult
         
         file_refs = connector.iter_files()
-        
+        max_files = int(os.environ.get("SCAN_MAX_FILES", "0") or "0")
+        if max_files > 0:
+            from itertools import islice
+
+            file_refs = islice(file_refs, max_files)
+            logger.info("Scan limited to %d files (SCAN_MAX_FILES)", max_files)
+
         def handle_result(r: FileScanResult):
             # Write FileMetadata on the fly as files are processed
             writer.add_file_state(r.file_ref, content_hash="")
