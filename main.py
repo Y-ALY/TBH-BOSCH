@@ -317,8 +317,12 @@ def get_user_details(
         raise HTTPException(status_code=403, detail="Forbidden")
 
     if employee_id == "all":
-        user_files = db.query(FileMetadata).all()
-        all_findings = db.query(Finding).all()
+        # Cap "all" requests to prevent massive OOM payloads
+        user_files = db.query(FileMetadata).filter(
+            ~FileMetadata.file_path.startswith("[DELETED]")
+        ).limit(500).all()
+        file_ids = [f.id for f in user_files]
+        all_findings = db.query(Finding).filter(Finding.file_id.in_(file_ids)).all()
     else:
         user_files = db.query(FileMetadata).filter(FileMetadata.owner_employee_id == employee_id).all()
         all_findings = db.query(Finding).join(
@@ -432,14 +436,16 @@ def get_admin_kpis(
         
     from datetime import datetime, timedelta
     
-    # 1. Fetch all files and filter out deleted ones
-    all_files = db.query(FileMetadata).all()
-    active_files = [f for f in all_files if not getattr(f, "file_path", "").startswith("[DELETED]")]
+    # 1 & 2. Total active files and total volume
+    stats = db.query(
+        func.count(FileMetadata.id),
+        func.sum(FileMetadata.size_bytes)
+    ).filter(
+        ~FileMetadata.file_path.like("[DELETED]%")
+    ).first()
     
-    total_files = len(active_files)
-    
-    # 2. Total data volume in bytes, converted to GB
-    total_bytes = sum(getattr(f, "size_bytes", 0) or 0 for f in active_files)
+    total_files = stats[0] or 0
+    total_bytes = stats[1] or 0
     total_volume_gb = round(total_bytes / (1024 ** 3), 4) # Convert bytes to GB
     
     # 3. Total files with findings
@@ -458,8 +464,13 @@ def get_admin_kpis(
     expiring_soon = 0
     delete_candidates = 0
     
-    for f in active_files:
-        deadline = f.retention_deadline
+    files_with_deadline = db.query(FileMetadata.retention_deadline).filter(
+        ~FileMetadata.file_path.like("[DELETED]%"),
+        FileMetadata.retention_deadline.isnot(None)
+    ).all()
+    
+    for (deadline_val,) in files_with_deadline:
+        deadline = deadline_val
         if deadline:
             if isinstance(deadline, str):
                 try:
@@ -477,10 +488,15 @@ def get_admin_kpis(
     # 5. Get a summary of the most recent findings WITH MASKING applied
     recent_findings = db.query(Finding).order_by(Finding.id.desc()).limit(10).all()
     
+    # Optimize N+1 lookup for file names
+    recent_file_ids = [f.file_id for f in recent_findings if f.file_id]
+    file_records = db.query(FileMetadata).filter(FileMetadata.id.in_(recent_file_ids)).all()
+    file_map = {f.id: f for f in file_records}
+    
     safe_findings = []
     for finding in recent_findings:
         # Get filename
-        file_record = db.query(FileMetadata).filter(FileMetadata.id == finding.file_id).first()
+        file_record = file_map.get(finding.file_id)
         if file_record and file_record.file_path:
             filename = file_record.file_path.split("/")[-1].split("\\")[-1]
         else:
@@ -525,29 +541,10 @@ def search_employees(
     q_lower = f"%{q.lower()}%"
     from sqlalchemy import or_, func, desc
     
-    findings_subq = (
-        db.query(
-            FileMetadata.owner_employee_id.label("employee_id"),
-            func.count(Finding.id).label("findings_count")
-        )
-        .join(Finding, Finding.file_id == FileMetadata.id)
-        .filter(
-            ~FileMetadata.file_path.startswith("[DELETED]"),
-            Finding.status != 'deleted',
-            Finding.review_status != 'deleted'
-        )
-        .group_by(FileMetadata.owner_employee_id)
-        .subquery()
-    )
-
-    results_raw = (
-        db.query(
-            Employee,
-            func.count(FileMetadata.id).label("file_count"),
-            func.coalesce(findings_subq.c.findings_count, 0).label("findings_count")
-        )
+    # 1. Fetch matching employees and their file counts first
+    matching_emps_query = (
+        db.query(Employee, func.count(FileMetadata.id).label("file_count"))
         .outerjoin(FileMetadata, (FileMetadata.owner_employee_id == Employee.employee_id) & ~FileMetadata.file_path.startswith("[DELETED]"))
-        .outerjoin(findings_subq, findings_subq.c.employee_id == Employee.employee_id)
         .filter(
             or_(
                 func.lower(Employee.first_name).like(q_lower),
@@ -557,14 +554,39 @@ def search_employees(
                 func.lower(Employee.first_name + " " + Employee.last_name).like(q_lower),
             )
         )
-        .group_by(Employee.id, findings_subq.c.findings_count)
+        .group_by(Employee.id)
         .order_by(desc("file_count"), Employee.last_name)
         .limit(50)
         .all()
     )
     
+    # Extract the matched employee IDs
+    emp_ids = [emp.employee_id for emp, _ in matching_emps_query]
+    
+    if not emp_ids:
+        return []
+
+    # 2. Fetch findings count ONLY for these specific matched employees
+    findings_counts = (
+        db.query(
+            FileMetadata.owner_employee_id,
+            func.count(Finding.id)
+        )
+        .join(Finding, Finding.file_id == FileMetadata.id)
+        .filter(
+            FileMetadata.owner_employee_id.in_(emp_ids),
+            ~FileMetadata.file_path.startswith("[DELETED]"),
+            Finding.status != 'deleted',
+            Finding.review_status != 'deleted'
+        )
+        .group_by(FileMetadata.owner_employee_id)
+        .all()
+    )
+    
+    findings_map = {emp_id: count for emp_id, count in findings_counts}
+    
     results = []
-    for emp, file_count, findings_count in results_raw:
+    for emp, file_count in matching_emps_query:
         results.append({
             "employee_id": emp.employee_id,
             "first_name": emp.first_name,
@@ -573,7 +595,7 @@ def search_employees(
             "department": emp.department,
             "location": emp.location,
             "file_count": file_count,
-            "findings_count": findings_count,
+            "findings_count": findings_map.get(emp.employee_id, 0),
         })
     return results
 
@@ -690,10 +712,13 @@ def get_employee_files(
     ).all()
     
     # 3. Format the response for the frontend
+    file_map = {f.id: f for f in user_files}
     results = []
     for finding in user_findings:
         # We need the file name to show the user which file has the issue
-        file_record = db.query(FileMetadata).filter(FileMetadata.id == finding.file_id).first()
+        file_record = file_map.get(finding.file_id)
+        if not file_record:
+            continue
         
         # Calculate if file's retention deadline has expired
         retention_deadline = file_record.retention_deadline
@@ -1169,11 +1194,24 @@ def search_findings(
             | Finding.file_id_str.ilike(q_pattern)
         )
 
-    all_results = query.all()
+    # 1. Get total count of distinct files matching filters
+    file_id_query = query.with_entities(Finding.file_id).distinct()
+    total_count = file_id_query.count()
+    
+    # 2. Paginate the distinct file_ids
+    # Using order_by to ensure consistent pagination order
+    paginated_file_ids_raw = file_id_query.order_by(Finding.file_id.desc()).offset(skip).limit(limit).all()
+    paginated_file_ids = [r[0] for r in paginated_file_ids_raw if r[0] is not None]
+    
+    if paginated_file_ids:
+        # 3. Fetch ONLY findings for those files
+        page_results = query.filter(Finding.file_id.in_(paginated_file_ids)).all()
+    else:
+        page_results = []
     
     # Group findings by file to return exactly one entry per file
     grouped_files = {}
-    for res in all_results:
+    for res in page_results:
         file_id = res.file_id_str or str(res.file_id)
         if file_id not in grouped_files:
             grouped_files[file_id] = {
@@ -1201,7 +1239,7 @@ def search_findings(
             grouped_files[file_id]["risk_level"] = rl
 
     # Format the results
-    results = []
+    paginated = []
     risk_breakdown: Dict[str, int] = {}
     
     for file_id, data in grouped_files.items():
@@ -1216,7 +1254,7 @@ def search_findings(
         rl = data["risk_level"]
         risk_breakdown[rl] = risk_breakdown.get(rl, 0) + 1
             
-        results.append({
+        paginated.append({
             "finding_id": data["finding_id"],
             "db_file_id": data["db_file_id"],
             "file_id": file_id,
@@ -1228,9 +1266,6 @@ def search_findings(
             "assigned_owner": data["assigned_owner"],
             "owner_resolved": data["owner_resolved"],
         })
-
-    total_count = len(results)
-    paginated = results[skip : skip + limit]
 
     return {
         "results": paginated,

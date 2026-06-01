@@ -325,30 +325,15 @@ def _run_background_scan(
 
         writer = BulkWriter(db, batch_size=500)
 
-        # ── Persist FileMetadata via BulkWriter (no duplicate list_files call) ──
-        files = connector.list_files()
-        job.total_files = len(files)
-        db.commit()
-
-        file_refs = []
-        for file_meta in files:
-            fr = FileRef(
-                file_id=file_meta.file_id,
-                file_name=file_meta.file_name,
-                path_or_uri=file_meta.path,
-                source_type="local",
-                size_bytes=file_meta.size_bytes,
-                last_modified=file_meta.last_modified,
-                etag_or_version="",
-            )
-            writer.add_file_state(fr, content_hash=file_meta.content_hash)
-            file_refs.append(fr)
-
         # ── Run the scanner ──────────────────────────────────────────────
         from src.streaming_scanner import run_streaming_scan
         from src.models import ScanOptions, FileScanResult
         
+        file_refs = connector.iter_files()
+        
         def handle_result(r: FileScanResult):
+            # Write FileMetadata on the fly as files are processed
+            writer.add_file_state(r.file_ref, content_hash="")
             for f in r.findings:
                 # extract_entities() leaves file_id empty ("set by scanner") —
                 # stamp it here so the finding can be linked to its file row.
@@ -358,7 +343,7 @@ def _run_background_scan(
 
         metrics = run_streaming_scan(
             connector,
-            iter(file_refs),
+            file_refs,
             ScanOptions(mode=mode, max_workers=os.cpu_count() or 4),
             on_result=handle_result
         )
@@ -746,8 +731,21 @@ async def upload_files(file: List[UploadFile] = File(...), db: Session = Depends
                 
         # Run pipeline on the temporary directory
         try:
+            from src.streaming_scanner import run_streaming_scan
+            from src.models import ScanOptions, FileScanResult
+            
             connector = LocalSampleRepoConnector(repo_path=temp_dir)
-            result: ScanResultDC = run_ai_scan(connector, ai_parser=_ai_parser, db_session=db)
+            all_findings = []
+            
+            def handle_upload_result(r: FileScanResult):
+                all_findings.extend(r.findings)
+                
+            metrics = run_streaming_scan(
+                connector,
+                connector.iter_files(),
+                ScanOptions(mode="full", max_workers=os.cpu_count() or 4),
+                on_result=handle_upload_result
+            )
         except Exception as exc:
             logger.exception("Pipeline error during uploaded file scan")
             raise HTTPException(
@@ -756,22 +754,22 @@ async def upload_files(file: List[UploadFile] = File(...), db: Session = Depends
             )
 
         # Persist to SQLite
-        for f in result.findings:
+        for f in all_findings:
             _persist_finding(db, f)
         db.commit()
 
         logger.info(
             "Upload Scan complete — %d files scanned, %d findings (AI %s)",
-            result.files_scanned,
-            len(result.findings),
+            metrics.files_scanned,
+            len(all_findings),
             "on" if _ai_parser else "off",
         )
 
         return ScanSummary(
-            scan_id=result.scan_id,
-            timestamp=result.timestamp,
-            files_scanned=result.files_scanned,
-            findings_count=len(result.findings),
+            scan_id=metrics.scan_id,
+            timestamp=datetime.now().isoformat(),
+            files_scanned=metrics.files_scanned,
+            findings_count=len(all_findings),
             ai_enabled=_ai_parser is not None,
         )
     finally:
