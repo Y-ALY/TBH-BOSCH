@@ -58,19 +58,20 @@ def startup_event():
                         f"connected={is_connected}). Skipping auto-scan."
                     )
                 else:
-                    print("No cache found. Database is empty. Seeding baseline data and starting full background scan...")
+                    print("No cache found. Database is empty. Seeding baseline data...")
                     seed_json_data.seed_data()
 
-                    scan_id = f"scan-{uuid.uuid4().hex[:8]}"
-                    db.add(ScanJob(scan_id=scan_id, status="pending"))
-                    db.commit()
-
-                    print(f"Starting 104k file scan (ID: {scan_id}) in background...")
-                    threading.Thread(
-                        target=_run_background_scan,
-                        args=(scan_id, "./strict_drive", "full", "layered", False),
-                        daemon=True,
-                    ).start()
+                    # HACKATHON FIX: Disable auto-background scan on Render Free Tier
+                    # It requires too much memory and CPU (OOM kills the server, causing 502 Bad Gateway)
+                    # scan_id = f"scan-{uuid.uuid4().hex[:8]}"
+                    # db.add(ScanJob(scan_id=scan_id, status="pending"))
+                    # db.commit()
+                    # print(f"Starting 104k file scan (ID: {scan_id}) in background...")
+                    # threading.Thread(
+                    #     target=_run_background_scan,
+                    #     args=(scan_id, "./strict_drive", "full", "layered", False),
+                    #     daemon=True,
+                    # ).start()
             finally:
                 db.close()
     except Exception as e:
