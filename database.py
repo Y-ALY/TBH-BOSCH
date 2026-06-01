@@ -2,10 +2,8 @@ from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, D
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime, timedelta
 
-import os
 # Using SQLite for instant, zero-config local development
-DB_PATH = os.getenv("DB_PATH", "./bosch_gdpr.db")
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./bosch_gdpr.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 

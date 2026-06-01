@@ -391,10 +391,8 @@ def _run_background_scan(
             from database import engine
             try:
                 engine.dispose() # Ensure all transactions are flushed
-                db_path = os.getenv("DB_PATH", "bosch_gdpr.db")
-                cache_path = os.getenv("CACHE_PATH", "bosch_gdpr.cache.db")
-                shutil.copy2(db_path, cache_path)
-                logger.info("Successfully created cache db for instant future restoration.")
+                shutil.copy2("bosch_gdpr.db", "bosch_gdpr.cache.db")
+                logger.info("Successfully created bosch_gdpr.cache.db for instant future restoration.")
             except Exception as cache_err:
                 logger.error(f"Failed to create cache db: {cache_err}")
 
