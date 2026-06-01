@@ -90,8 +90,35 @@ Trigger a scan from the admin UI or call:
 ```bash
 curl -X POST http://127.0.0.1:8000/api/admin/trigger-scan \
   -H "Content-Type: application/json" \
+  -H "Cookie: session_emp_id=BX-ADMIN" \
   -d '{"target_dir":"./demo_drive_rich"}'
 ```
+
+## Admin Scan Workflow
+
+The admin dashboard now follows the intended product flow:
+
+1. Log in as `admin@bosch.com` / `password123`.
+2. Open **Scan Intake** on `/admin-dashboard`.
+3. Either upload one or more files, or paste a local folder/file path, `file://` URL, or direct downloadable `https://` file URL.
+4. The scanner analyzes the source, writes files and findings into SQLite, refreshes KPIs, and links to `/data-points` for review.
+
+The same workflow is available through API endpoints:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/admin/intake/link \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session_emp_id=BX-ADMIN" \
+  -d '{"source":"./sample_docs"}'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/admin/intake/upload \
+  -H "Cookie: session_emp_id=BX-ADMIN" \
+  -F "files=@./sample_docs/test_memo.txt"
+```
+
+The extraction path includes a regression guard for the current performance target: a 1 MB text source must scan in under 5 seconds.
 
 ## Evaluation Criteria
 

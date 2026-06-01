@@ -953,6 +953,7 @@ class TriggerScanRequest(PydanticBaseModel):
 @app.post("/api/admin/trigger-scan")
 def trigger_manual_scan(
     req: TriggerScanRequest = TriggerScanRequest(),
+    _admin_emp_id: str = Depends(require_admin_session),
     db: Session = Depends(get_db),
 ):
     """Run a delta-aware scan on a target directory.
@@ -1474,7 +1475,9 @@ async def scan_uploaded_sources(
 
 
 @app.get("/api/admin/extraction-results")
-def get_extraction_results():
+def get_extraction_results(
+    _admin_emp_id: str = Depends(require_admin_session),
+):
     """Return the latest cached extraction results without re-scanning.
 
     Use this for dashboard refreshes — it's instant because it reads

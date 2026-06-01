@@ -101,6 +101,9 @@ class TestMainAppPages:
         )
         assert response.status_code == 403
 
+        response = main_test_client.get("/api/admin/extraction-results")
+        assert response.status_code == 403
+
     def test_trigger_extraction_persists_new_text_files(self, main_test_client, engine, tmp_path):
         from database import FileMetadata, Finding
 
