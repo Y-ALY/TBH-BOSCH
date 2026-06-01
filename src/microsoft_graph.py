@@ -102,6 +102,15 @@ def _build_mock_item(page: int, index: int) -> dict | None:
 # MicrosoftGraphConnector — base
 # ---------------------------------------------------------------------------
 
+import base64
+
+def encode_sharing_url(url: str) -> str:
+    """Base64 encode a sharing URL for the Microsoft Graph /shares/ endpoint."""
+    encoded = base64.b64encode(url.encode("utf-8")).decode("utf-8")
+    safe_encoded = encoded.replace("+", "-").replace("/", "_").rstrip("=")
+    return f"u!{safe_encoded}"
+
+
 class MicrosoftGraphConnector(Connector):
     """Base connector for Microsoft Graph API (OneDrive + SharePoint).
 
@@ -122,6 +131,11 @@ class MicrosoftGraphConnector(Connector):
         self.max_concurrent = max_concurrent
         self._access_token: str | None = None
         self._token_expiry: float = 0.0
+
+        # Sharing link settings
+        self._is_sharing_link = False
+        self._sharing_url = None
+        self._encoded_sharing_url = None
 
         # Mock mode
         self._mock_mode = (client_id == "mock")
@@ -222,6 +236,28 @@ class MicrosoftGraphConnector(Connector):
         if self._mock_should_429:
             self._mock_should_429 = False
             raise _MockRetrySignal()
+
+        if self._is_sharing_link:
+            if "/driveItem/children" in endpoint:
+                items = [
+                    {
+                        "id": "mock-share-subfolder-1",
+                        "name": "Shared Docs Subfolder",
+                        "webUrl": "https://contoso.sharepoint.com/:f:/g/personal/shared_docs",
+                        "size": 0,
+                        "lastModifiedDateTime": "2024-01-01T00:00:00Z",
+                        "eTag": '"mock-etag-subfolder"',
+                        "folder": {},
+                    }
+                ]
+                for i in range(10):
+                    items.append(_build_mock_item(0, i))
+                return {"value": items}
+            elif "mock-share-subfolder-1/children" in endpoint:
+                items = []
+                for i in range(10, 20):
+                    items.append(_build_mock_item(0, i))
+                return {"value": items}
 
         page = self._mock_page
         self._mock_page += 1
@@ -327,18 +363,37 @@ class MicrosoftGraphConnector(Connector):
     # ------------------------------------------------------------------
 
     def iter_files(self) -> Iterator[FileRef]:
-        """Streaming file discovery — yields lightweight FileRef objects.
-
-        Lists files from the configured drive endpoint with automatic paging.
-        Does NOT download content. Uses metadata-before-download pattern.
-        """
+        """Streaming file discovery — yields lightweight FileRef objects."""
         # Reset mock page counter for fresh iteration
         self._mock_page = 0
         self._mock_should_429 = True
 
-        endpoint = self._get_list_endpoint()
-        for item in self._graph_paginated(endpoint):
-            yield self._drive_item_to_fileref(item)
+        if self._is_sharing_link:
+            folder_queue = ["root"]
+            visited = set(folder_queue)
+            
+            while folder_queue:
+                current_folder = folder_queue.pop(0)
+                if current_folder == "root":
+                    endpoint = f"/shares/{self._encoded_sharing_url}/driveItem/children"
+                else:
+                    endpoint = f"/shares/{self._encoded_sharing_url}/items/{current_folder}/children"
+                
+                try:
+                    for item in self._graph_paginated(endpoint):
+                        if "folder" in item:
+                            fid = item["id"]
+                            if fid not in visited:
+                                visited.add(fid)
+                                folder_queue.append(fid)
+                        else:
+                            yield self._drive_item_to_fileref(item)
+                except Exception:
+                    pass
+        else:
+            endpoint = self._get_list_endpoint()
+            for item in self._graph_paginated(endpoint):
+                yield self._drive_item_to_fileref(item)
 
     # ------------------------------------------------------------------
     # Connector ABC — open_file
@@ -357,7 +412,10 @@ class MicrosoftGraphConnector(Connector):
             content = f"mock-content-for-{name}".encode("utf-8")
             return io.BytesIO(content)
 
-        endpoint = self._get_content_endpoint(item_id)
+        if self._is_sharing_link:
+            endpoint = f"/shares/{self._encoded_sharing_url}/items/{item_id}/content"
+        else:
+            endpoint = self._get_content_endpoint(item_id)
         response = self._graph_request(endpoint)
         # The content endpoint returns raw bytes, but _graph_request parses JSON.
         # We need to fetch the raw content separately.
@@ -384,7 +442,10 @@ class MicrosoftGraphConnector(Connector):
             name = item.get("name", "unknown") if item else file_id
             return f"mock-content-for-{name}".encode("utf-8")
 
-        endpoint = self._get_content_endpoint(item_id)
+        if self._is_sharing_link:
+            endpoint = f"/shares/{self._encoded_sharing_url}/items/{item_id}/content"
+        else:
+            endpoint = self._get_content_endpoint(item_id)
         url = f"{self.GRAPH_BASE}{endpoint}"
         headers = {
             "Authorization": f"Bearer {self._authenticate()}",
@@ -405,7 +466,10 @@ class MicrosoftGraphConnector(Connector):
             if item is None:
                 return None
         else:
-            endpoint = self._get_item_endpoint(item_id)
+            if self._is_sharing_link:
+                endpoint = f"/shares/{self._encoded_sharing_url}/items/{item_id}"
+            else:
+                endpoint = self._get_item_endpoint(item_id)
             try:
                 item = self._graph_request(endpoint)
             except requests.HTTPError as exc:
@@ -482,6 +546,16 @@ class MicrosoftGraphConnector(Connector):
         """Look up a mock driveItem by id. Returns None if not found."""
         parsed = _parse_mock_item_id(item_id)
         if parsed is None:
+            if item_id == "mock-share-subfolder-1":
+                return {
+                    "id": "mock-share-subfolder-1",
+                    "name": "Shared Docs Subfolder",
+                    "webUrl": "https://contoso.sharepoint.com/:f:/g/personal/shared_docs",
+                    "size": 0,
+                    "lastModifiedDateTime": "2024-01-01T00:00:00Z",
+                    "eTag": '"mock-etag-subfolder"',
+                    "file": {"mimeType": "application/octet-stream"},
+                }
             return None
         page, index = parsed
         return _build_mock_item(page, index)
@@ -500,7 +574,13 @@ class OneDriveConnector(MicrosoftGraphConnector):
     def __init__(self, tenant_id: str, client_id: str, client_secret: str,
                  user_id: str, max_concurrent: int = 4):
         super().__init__(tenant_id, client_id, client_secret, max_concurrent)
-        self.user_id = user_id
+        if user_id and (user_id.startswith("http://") or user_id.startswith("https://")):
+            self._is_sharing_link = True
+            self._sharing_url = user_id
+            self._encoded_sharing_url = encode_sharing_url(user_id)
+            self.user_id = "shared"
+        else:
+            self.user_id = user_id
 
     def _source_type(self) -> str:
         return "onedrive"
@@ -534,8 +614,22 @@ class SharePointConnector(MicrosoftGraphConnector):
     def __init__(self, tenant_id: str, client_id: str, client_secret: str,
                  site_id: str, drive_id: str, max_concurrent: int = 4):
         super().__init__(tenant_id, client_id, client_secret, max_concurrent)
-        self.site_id = site_id
-        self.drive_id = drive_id
+        
+        url_val = None
+        if site_id and (site_id.startswith("http://") or site_id.startswith("https://")):
+            url_val = site_id
+        elif drive_id and (drive_id.startswith("http://") or drive_id.startswith("https://")):
+            url_val = drive_id
+            
+        if url_val:
+            self._is_sharing_link = True
+            self._sharing_url = url_val
+            self._encoded_sharing_url = encode_sharing_url(url_val)
+            self.site_id = "shared"
+            self.drive_id = "shared"
+        else:
+            self.site_id = site_id
+            self.drive_id = drive_id
 
     def _source_type(self) -> str:
         return "sharepoint"

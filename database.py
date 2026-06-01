@@ -6,8 +6,19 @@ from datetime import datetime, timedelta
 SQLALCHEMY_DATABASE_URL = "sqlite:///./bosch_gdpr.db"
 
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    SQLALCHEMY_DATABASE_URL, 
+    connect_args={"check_same_thread": False, "timeout": 30}
 )
+
+from sqlalchemy import event
+
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
+    cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -113,6 +124,15 @@ class Notification(Base):
     status = Column(String, default="unread")          # unread | read | actioned
     created_at = Column(DateTime, default=datetime.now)
     actioned_at = Column(DateTime, nullable=True)
+
+class ActiveConnection(Base):
+    """Stores the currently active external data connector configuration."""
+    __tablename__ = "active_connection"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    source_type = Column(String, default="local") # local, googledrive, onedrive, sharepoint
+    connection_config = Column(String, default="{}") # JSON string with credentials / ids
+    created_at = Column(DateTime, default=datetime.now)
 
 
 # ── Reusable DB session dependency ────────────────────────────────────────────

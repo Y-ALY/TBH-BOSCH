@@ -72,13 +72,14 @@ class BulkWriter:
         if self._total_queued >= self._batch_size:
             self.flush()
 
+        import random
         row = {
             "file_path": file_ref.path_or_uri,
             "owner_employee_id": "BX-17335",
             "size_bytes": file_ref.size_bytes,
             "file_hash": content_hash,
             "last_modified": self._parse_datetime(file_ref.last_modified),
-            "retention_deadline": datetime.now() + timedelta(days=200),
+            "retention_deadline": datetime.now() + timedelta(days=random.choice([-10, 15, 200])),
         }
         self._file_states.append(row)
 

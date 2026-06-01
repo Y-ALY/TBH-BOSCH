@@ -111,12 +111,48 @@ def _paginate_mock_files(
 
     # Super-basic query filtering (just for realism; tests don't rely on this)
     if query:
+        import re
+        parent_match = re.search(r"'([^']+)' in parents", query)
+        if parent_match:
+            parent_id = parent_match.group(1)
+            mock_items = []
+            # Dynamically simulate hierarchy if parent ID is set
+            if parent_id.startswith("mock") or len(parent_id) > 20:
+                if not parent_id.endswith("-subfolder-1") and not parent_id.endswith("-subfolder-2"):
+                    mock_items.append({
+                        "id": f"{parent_id}-subfolder-1",
+                        "name": "Documents Folder",
+                        "mimeType": "application/vnd.google-apps.folder",
+                        "size": None,
+                        "modifiedTime": "2025-01-01T00:00:00.000Z",
+                        "version": "1",
+                    })
+                    for i in range(10):
+                        mock_items.append(_make_mock_file(i))
+                elif parent_id.endswith("-subfolder-1"):
+                    mock_items.append({
+                        "id": f"{parent_id[:-12]}-subfolder-2",
+                        "name": "Archived Files",
+                        "mimeType": "application/vnd.google-apps.folder",
+                        "size": None,
+                        "modifiedTime": "2025-01-01T00:00:00.000Z",
+                        "version": "1",
+                    })
+                    for i in range(10, 20):
+                        mock_items.append(_make_mock_file(i))
+                elif parent_id.endswith("-subfolder-2"):
+                    for i in range(20, 30):
+                        mock_items.append(_make_mock_file(i))
+            return {
+                "files": mock_items,
+                "nextPageToken": None,
+            }
+
         lower = query.lower()
         if "mimetype" in lower and "google-apps" in lower:
             result_files = [f for f in result_files if "google-apps" in (f.get("mimeType") or "")]
         elif "name" in lower and "contains" in lower:
             # Extract term between single quotes
-            import re
             m = re.search(r"'([^']*)'", query)
             if m:
                 term = m.group(1).lower()
@@ -295,6 +331,30 @@ _FIELDS = (
 )
 
 
+def _parse_drive_or_folder_id(input_str: str | None) -> tuple[str | None, bool]:
+    """Parse folder/drive ID from URL or return the raw string.
+    
+    Returns: (extracted_id, is_folder)
+    """
+    if not input_str:
+        return None, False
+    
+    import re
+    # Check for folders/ID pattern
+    match = re.search(r"folders/([a-zA-Z0-9-_]+)", input_str)
+    if match:
+        return match.group(1), True
+        
+    # Check for id=ID pattern
+    match = re.search(r"[?&]id=([a-zA-Z0-9-_]+)", input_str)
+    if match:
+        return match.group(1), True
+        
+    cleaned = input_str.strip()
+    is_folder = len(cleaned) > 20 and not cleaned.startswith("mock")
+    return cleaned, is_folder
+
+
 class GoogleDriveConnector(Connector):
     """Connector for Google Drive via Drive API v3.
 
@@ -308,7 +368,13 @@ class GoogleDriveConnector(Connector):
         max_concurrent: int = 4,
     ):
         self._credentials_path = credentials_path
-        self._shared_drive_id = shared_drive_id
+        
+        # Robustly parse folder ID or URL if provided
+        extracted_id, is_folder = _parse_drive_or_folder_id(shared_drive_id)
+        self._shared_drive_id = extracted_id if not is_folder else None
+        self._folder_id = extracted_id if is_folder else None
+        self._is_folder = is_folder
+        
         self._max_concurrent = max_concurrent
         self._service = self._build_service()
 
@@ -319,7 +385,8 @@ class GoogleDriveConnector(Connector):
     def _build_service(self):
         """Build the Google Drive API service object (mock or real)."""
         if self._credentials_path == "mock":
-            return _MockDriveService(self._shared_drive_id)
+            # For mock service, pass extracted ID
+            return _MockDriveService(self._shared_drive_id or self._folder_id)
         return _build_real_service(self._credentials_path)
 
     # ------------------------------------------------------------------
@@ -398,9 +465,29 @@ class GoogleDriveConnector(Connector):
     # ------------------------------------------------------------------
 
     def iter_files(self) -> Iterator[FileRef]:
-        """List all files in Drive (or shared drive)."""
-        for file_data in self._list_files_paginated():
-            yield self._drive_file_to_fileref(file_data)
+        """List all files in Drive (or shared drive, or recursively in a specific folder)."""
+        if self._is_folder:
+            folder_queue = [self._folder_id]
+            visited = set(folder_queue)
+            
+            while folder_queue:
+                current_folder = folder_queue.pop(0)
+                query = f"'{current_folder}' in parents and trashed = false"
+                try:
+                    for file_data in self._list_files_paginated(query=query):
+                        mime_type = file_data.get("mimeType", "")
+                        if mime_type == "application/vnd.google-apps.folder":
+                            fid = file_data["id"]
+                            if fid not in visited:
+                                visited.add(fid)
+                                folder_queue.append(fid)
+                        else:
+                            yield self._drive_file_to_fileref(file_data)
+                except Exception:
+                    pass
+        else:
+            for file_data in self._list_files_paginated():
+                yield self._drive_file_to_fileref(file_data)
 
     # ------------------------------------------------------------------
     # list_files (backward compat)

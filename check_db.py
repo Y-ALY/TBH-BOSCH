@@ -1,14 +1,13 @@
-from sqlalchemy.orm import Session
-from database import SessionLocal, engine
-from database import FileMetadata, Finding
+import sqlite3
 
-db = SessionLocal()
-files = db.query(FileMetadata).all()
-print("Total Files:", len(files))
-deleted_files = [f for f in files if getattr(f, "file_path", "").startswith("[DELETED]")]
-print("Deleted Files count:", len(deleted_files))
-if deleted_files:
-    print("Example deleted:", deleted_files[-1].file_path)
+db = sqlite3.connect("bosch_gdpr.cache.db")
+c = db.cursor()
+c.execute("SELECT COUNT(*) FROM files")
+print(f"Cache files count: {c.fetchone()[0]}")
+db.close()
 
-findings = db.query(Finding).filter(Finding.status == "deleted").all()
-print("Deleted findings count:", len(findings))
+db = sqlite3.connect("bosch_gdpr.db")
+c = db.cursor()
+c.execute("SELECT COUNT(*) FROM files")
+print(f"Main DB files count: {c.fetchone()[0]}")
+db.close()

@@ -21,145 +21,48 @@ from database import SessionLocal
 
 @app.on_event("startup")
 def startup_event():
-    import json
-    import hashlib
-    from pathlib import Path
-    from datetime import datetime, timedelta
-    from src.connector import LocalSampleRepoConnector
+    from database import engine, SessionLocal, FileMetadata, ScanJob
+    import shutil
+    import os
+    import threading
+    import uuid
+    from api import _run_background_scan
+    import seed_json_data
     
-    db = SessionLocal()
+    cache_path = "bosch_gdpr.cache.db"
+    db_path = "bosch_gdpr.db"
+    
     try:
-        # We no longer clear the DB tables to preserve the delta state and findings across reboots.
-        # This mitigates the issue of files appearing 'clean' initially.
-        
-        # 1. Load Owner Hints to generate Employees
-        hints_path = Path("strict_drive/owner_hints.jsonl")
-        hints = {}
-        if hints_path.exists():
-            with open(hints_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.strip():
-                        try:
-                            obj = json.loads(line)
-                            filename = obj.get("file_path", "").split("/")[-1]
-                            hints[filename] = obj
-                        except Exception:
-                            pass
-                
-        # Always ensure admin exists
-        admin = db.query(Employee).filter(Employee.email == "admin@bosch.com").first()
-        if not admin:
-            admin = Employee(
-                employee_id="BX-ADMIN", email="admin@bosch.com",
-                first_name="Admin", last_name="User",
-                password="password123", department="IT Security", location="Stuttgart"
-            )
-            db.add(admin)
-            db.commit()
-
-        # Cache existing employees to completely avoid N+1 queries
-        all_employees = db.query(Employee).all()
-        added_emails = {e.email for e in all_employees}
-        added_emp_ids = {e.employee_id for e in all_employees}
-        email_to_emp_id = {e.email: e.employee_id for e in all_employees}
-
-        new_employees = []
-        for file_name, hint in hints.items():
-            email = hint.get("email", "unknown@bosch.com")
-            if email in added_emails:
-                continue
-
-            emp_id_int = int(hashlib.md5(email.encode()).hexdigest(), 16) % 90000 + 10000
-            emp_id_str = f"BX-{emp_id_int}"
-            while emp_id_str in added_emp_ids:
-                emp_id_int = (emp_id_int - 10000 + 1) % 90000 + 10000
-                emp_id_str = f"BX-{emp_id_int}"
-            
-            added_emp_ids.add(emp_id_str)
-            added_emails.add(email)
-            email_to_emp_id[email] = emp_id_str
-
-            first, last = hint.get("name", "Unknown User").split(" ", 1) if " " in hint.get("name", "") else (hint.get("name", "User"), "")
-            emp = Employee(
-                employee_id=emp_id_str, email=email,
-                first_name=first, last_name=last,
-                password="password123", department=hint.get("department", "Unknown"), location="Unknown"
-            )
-            new_employees.append(emp)
-            db.add(emp)
-        
-        if new_employees:
-            db.commit()
-
-        # 2. Ingest FileMetadata from strict_drive (streaming to handle 100k+ files)
-        connector = LocalSampleRepoConnector(repo_path="./strict_drive")
-        
-        # Cache existing file paths
-        existing_file_paths = {f[0] for f in db.query(FileMetadata.file_path).all()}
-        
-        new_metas = []
-        added_count = 0
-        total_discovered = 0
-        
-        for idx, file_meta in enumerate(connector.iter_files()):
-            total_discovered += 1
-            if file_meta.path_or_uri in existing_file_paths:
-                continue
-                
-            hint = hints.get(file_meta.file_name, {})
-            email = hint.get("email")
-            owner_id = email_to_emp_id.get(email, "BX-ADMIN") if email else "BX-ADMIN"
-            
-            days_offset = -10 if idx % 3 == 0 else (15 if idx % 3 == 1 else 200)
-            
+        if os.path.exists(cache_path):
+            print("Cache found! Restoring instant cached database...")
+            engine.dispose()
+            shutil.copy2(cache_path, db_path)
+            for ext in ['-wal', '-shm']:
+                f = f"{db_path}{ext}"
+                if os.path.exists(f):
+                    os.remove(f)
+            print("Cache restored successfully.")
+        else:
+            db = SessionLocal()
             try:
-                last_mod = datetime.fromisoformat(file_meta.last_modified)
-            except:
-                last_mod = datetime.now()
-
-            new_meta = FileMetadata(
-                file_path=file_meta.path_or_uri,
-                owner_employee_id=owner_id,
-                size_bytes=file_meta.size_bytes,
-                file_hash=file_meta.etag_or_version,
-                last_modified=last_mod,
-                retention_deadline=datetime.now() + timedelta(days=days_offset)
-            )
-            new_metas.append(new_meta)
-            db.add(new_meta)
-            added_count += 1
-            
-            # Batch commit to handle hundreds of thousands of files efficiently
-            if len(new_metas) >= 5000:
-                db.commit()
-                new_metas = []
-                
-        if new_metas:
-            db.commit()
-        
-        # 3. Cleanup deleted files from the database to keep counts accurate
-        import os
-        all_db_files = db.query(FileMetadata).all()
-        deleted_file_ids = []
-        deleted_files = []
-        for db_file in all_db_files:
-            if not db_file.file_path.startswith("[DELETED]") and not os.path.exists(db_file.file_path):
-                deleted_file_ids.append(db_file.id)
-                deleted_files.append(db_file)
-                
-        if deleted_file_ids:
-            db.query(Finding).filter(Finding.file_id.in_(deleted_file_ids)).delete(synchronize_session=False)
-            for df in deleted_files:
-                db.delete(df)
-            db.commit()
-        
-        print(f"Startup complete: Discovered {total_discovered} files. Added {added_count} new files into DB.")
-            
+                if db.query(FileMetadata).count() == 0:
+                    print("No cache found. Database is empty. Seeding baseline data and starting full background scan...")
+                    seed_json_data.seed_data()
+                    
+                    scan_id = f"scan-{uuid.uuid4().hex[:8]}"
+                    db.add(ScanJob(scan_id=scan_id, status="pending"))
+                    db.commit()
+                    
+                    print(f"Starting 104k file scan (ID: {scan_id}) in background...")
+                    threading.Thread(
+                        target=_run_background_scan,
+                        args=(scan_id, "./strict_drive", "full", "layered", False),
+                        daemon=True,
+                    ).start()
+            finally:
+                db.close()
     except Exception as e:
-        print(f"Error injecting data on startup: {e}")
-    finally:
-        db.close()
-
+        print(f"Error on startup: {e}")
 app.mount(
     "/static",
     StaticFiles(directory="static"),
@@ -1804,3 +1707,108 @@ def view_file_content(
         raise HTTPException(status_code=404, detail="File has been physically deleted.")
         
     return FileResponse(file_path)
+
+import uuid
+import json
+import threading
+from datetime import datetime
+from database import ActiveConnection as ActiveConnectionORM, ScanJob as ScanJobORM
+from api import _run_background_scan, ConnectRequest, ConnectSummary
+
+@app.post("/api/connect", response_model=ConnectSummary)
+async def connect_source(req: ConnectRequest, db: Session = Depends(get_db)):
+    active_conn = db.query(ActiveConnectionORM).first()
+    if not active_conn:
+        active_conn = ActiveConnectionORM()
+        db.add(active_conn)
+    active_conn.source_type = req.source_type
+    active_conn.connection_config = json.dumps(req.connection_config)
+    
+    from database import Finding, FileMetadata
+    db.query(Finding).delete()
+    db.query(FileMetadata).delete()
+    db.commit()
+    
+    scan_id = f"scan-{uuid.uuid4().hex[:8]}"
+    job = ScanJobORM(
+        scan_id=scan_id,
+        status="pending",
+        options_json=json.dumps({"mode": "full", "ai_mode": "layered", "strict_hash": False}),
+        created_at=datetime.now().isoformat()
+    )
+    db.add(job)
+    db.commit()
+
+    threading.Thread(
+        target=_run_background_scan,
+        args=(scan_id, "./strict_drive", "full", "layered", False),
+        daemon=True,
+    ).start()
+
+    return ConnectSummary(source_type=req.source_type, message="Connected and scan started.")
+
+@app.post("/api/disconnect", response_model=ConnectSummary)
+async def disconnect_source(db: Session = Depends(get_db)):
+    from database import engine
+    import shutil
+    import os
+    
+    try:
+        active_conn = db.query(ActiveConnectionORM).first()
+        if active_conn:
+            db.delete(active_conn)
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Warning: Could not delete active_conn, likely locked: {e}")
+        
+    cache_path = "bosch_gdpr.cache.db"
+    db_path = "bosch_gdpr.db"
+    
+    if os.path.exists(cache_path):
+        # We must fully close the session to release any SQLite file locks
+        db.close()
+        engine.dispose()
+        
+        try:
+            # Overwrite the db file
+            shutil.copy2(cache_path, db_path)
+            for ext in ['-wal', '-shm']:
+                f = f"{db_path}{ext}"
+                if os.path.exists(f):
+                    os.remove(f)
+        except Exception as e:
+            print(f"Error copying cache: {e}")
+            
+        return ConnectSummary(source_type="local", message="Disconnected and local cache restored instantly.")
+
+    else:
+        # Fallback if no cache exists
+        from database import Finding, FileMetadata
+        db.query(Finding).delete()
+        db.query(FileMetadata).delete()
+        db.commit()
+        
+        scan_id = f"scan-{uuid.uuid4().hex[:8]}"
+        job = ScanJobORM(
+            scan_id=scan_id,
+            status="pending",
+            options_json=json.dumps({"mode": "full", "ai_mode": "layered", "strict_hash": False}),
+            created_at=datetime.now().isoformat()
+        )
+        db.add(job)
+        db.commit()
+
+        threading.Thread(
+            target=_run_background_scan,
+            args=(scan_id, "./strict_drive", "full", "layered", False),
+            daemon=True,
+        ).start()
+        
+        return ConnectSummary(source_type="local", message="Disconnected and local scan started (No cache).")
+@app.get("/api/connection_status")
+async def get_connection_status(db: Session = Depends(get_db)):
+    active_conn = db.query(ActiveConnectionORM).first()
+    if active_conn:
+        return {"source_type": active_conn.source_type}
+    return {"source_type": "local"}

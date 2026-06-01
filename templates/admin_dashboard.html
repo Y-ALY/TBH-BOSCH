@@ -130,16 +130,16 @@
 
 <div class="main">
 
-    <section class="hero reveal">
-
-        <h1>
-            Main Dashboard
-        </h1>
-
-        <p>
-            Manage and delete private documents on the database.
-        </p>
-
+    <section class="hero reveal" style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h1>Main Dashboard</h1>
+            <p>Manage and delete private documents on the database.</p>
+        </div>
+        <div>
+            <button id="connectExternalBtn" class="explore-btn" onclick="openConnectModal()" style="display: none; background: #2563eb; color: white;">Connect External Data</button>
+            <button id="disconnectExternalBtn" class="explore-btn" onclick="disconnectExternalData()" style="display: none; background: #dc2626; color: white;">Disconnect External Data</button>
+            <span id="currentConnectionLabel" style="display: block; font-size: 12px; margin-top: 5px; color: var(--text-secondary); text-align: right;"></span>
+        </div>
     </section>
 
     {% include 'gdpr_modal_snippet.html' %}
@@ -288,6 +288,34 @@
         </button>
 
     </section>
+
+    <!-- CONNECT MODAL -->
+    <div id="connectModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center; font-family: 'Inter', sans-serif;">
+        <div style="background: var(--bg-primary); padding: 30px; border-radius: 12px; width: 400px; max-width: 90%; box-shadow: 0 10px 30px rgba(0,0,0,0.2); border: 1px solid var(--border-subtle);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin: 0;">Connect Data Source</h3>
+                <button onclick="closeConnectModal()" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: var(--text-primary);">&times;</button>
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 14px; font-weight: 500;">Source Type</label>
+                <select id="sourceTypeSelect" onchange="updateConnectForm()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle); background: var(--bg-body); color: var(--text-primary);">
+                    <option value="googledrive">Google Drive</option>
+                    <option value="onedrive">OneDrive</option>
+                    <option value="sharepoint">SharePoint</option>
+                </select>
+            </div>
+
+            <div id="configForm" style="margin-bottom: 20px; font-size: 14px;">
+                <!-- dynamic fields injected here -->
+            </div>
+
+            <div style="display: flex; justify-content: space-between; gap: 10px;">
+                <button onclick="submitConnect(true)" style="padding: 10px 15px; background: transparent; border: 1px solid #2563eb; color: #2563eb; border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 13px;">Use Mock Data (For Demo)</button>
+                <button onclick="submitConnect(false)" style="padding: 10px 15px; background: #2563eb; border: none; color: white; border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 13px;">Connect</button>
+            </div>
+        </div>
+    </div>
 
 </div>
 
@@ -452,6 +480,121 @@ async function loadOverviewStats() {
 // Fire the overview stats fetch on page load
 loadOverviewStats();
 
+// --- CONNECT EXTERNAL DATA LOGIC ---
+async function checkConnectionStatus() {
+    try {
+        const response = await fetch('/api/connection_status');
+        const data = await response.json();
+        const connectBtn = document.getElementById('connectExternalBtn');
+        const disconnectBtn = document.getElementById('disconnectExternalBtn');
+        const label = document.getElementById('currentConnectionLabel');
+        
+        if (data.source_type && data.source_type !== 'local') {
+            connectBtn.style.display = 'none';
+            disconnectBtn.style.display = 'inline-block';
+            label.textContent = "Connected to: " + data.source_type;
+        } else {
+            connectBtn.style.display = 'inline-block';
+            disconnectBtn.style.display = 'none';
+            label.textContent = "Connected to: Local Drive";
+        }
+    } catch(err) {
+        console.error("Error fetching connection status", err);
+    }
+}
+checkConnectionStatus();
+
+function openConnectModal() {
+    document.getElementById('connectModal').style.display = 'flex';
+    updateConnectForm();
+}
+
+function closeConnectModal() {
+    document.getElementById('connectModal').style.display = 'none';
+}
+
+function updateConnectForm() {
+    const type = document.getElementById('sourceTypeSelect').value;
+    const form = document.getElementById('configForm');
+    let html = '';
+    
+    if(type === 'googledrive') {
+        html = `
+            <div style="margin-bottom: 10px;">
+                <label style="display: block; margin-bottom: 5px;">Folder URL or Shared Drive ID (optional)</label>
+                <input type="text" id="cfg_shared_drive_id" placeholder="e.g. https://drive.google.com/drive/folders/..." style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border-subtle); background: var(--bg-body); color: var(--text-primary);">
+            </div>
+            <div style="margin-bottom: 10px;">
+                <label style="display: block; margin-bottom: 5px;">Credentials Path</label>
+                <input type="text" id="cfg_credentials_path" placeholder="/path/to/creds.json" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border-subtle); background: var(--bg-body); color: var(--text-primary);">
+            </div>
+        `;
+    } else if (type === 'onedrive') {
+        html = `
+            <div style="margin-bottom: 10px;"><label style="display: block; margin-bottom: 5px;">Tenant ID</label><input type="text" id="cfg_tenant_id" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border-subtle); background: var(--bg-body); color: var(--text-primary);"></div>
+            <div style="margin-bottom: 10px;"><label style="display: block; margin-bottom: 5px;">Client ID</label><input type="text" id="cfg_client_id" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border-subtle); background: var(--bg-body); color: var(--text-primary);"></div>
+            <div style="margin-bottom: 10px;"><label style="display: block; margin-bottom: 5px;">Client Secret</label><input type="password" id="cfg_client_secret" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border-subtle); background: var(--bg-body); color: var(--text-primary);"></div>
+            <div style="margin-bottom: 10px;"><label style="display: block; margin-bottom: 5px;">Folder URL or User ID</label><input type="text" id="cfg_user_id" placeholder="e.g. sharing link or email" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border-subtle); background: var(--bg-body); color: var(--text-primary);"></div>
+        `;
+    } else if (type === 'sharepoint') {
+        html = `
+            <div style="margin-bottom: 10px;"><label style="display: block; margin-bottom: 5px;">Tenant ID</label><input type="text" id="cfg_tenant_id" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border-subtle); background: var(--bg-body); color: var(--text-primary);"></div>
+            <div style="margin-bottom: 10px;"><label style="display: block; margin-bottom: 5px;">Client ID</label><input type="text" id="cfg_client_id" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border-subtle); background: var(--bg-body); color: var(--text-primary);"></div>
+            <div style="margin-bottom: 10px;"><label style="display: block; margin-bottom: 5px;">Client Secret</label><input type="password" id="cfg_client_secret" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border-subtle); background: var(--bg-body); color: var(--text-primary);"></div>
+            <div style="margin-bottom: 10px;"><label style="display: block; margin-bottom: 5px;">Folder URL or Site ID</label><input type="text" id="cfg_site_id" placeholder="e.g. SharePoint folder URL or Site ID" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border-subtle); background: var(--bg-body); color: var(--text-primary);"></div>
+            <div style="margin-bottom: 10px;"><label style="display: block; margin-bottom: 5px;">Drive ID (optional if folder URL is used)</label><input type="text" id="cfg_drive_id" placeholder="e.g. Document library Drive ID" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--border-subtle); background: var(--bg-body); color: var(--text-primary);"></div>
+        `;
+    }
+    form.innerHTML = html;
+}
+
+async function submitConnect(useMock) {
+    const type = document.getElementById('sourceTypeSelect').value;
+    let config = {};
+    
+    if (useMock) {
+        if (type === 'googledrive') config = { credentials_path: "mock" };
+        else if (type === 'onedrive') config = { tenant_id: "mock", client_id: "mock", client_secret: "mock", user_id: "mock" };
+        else if (type === 'sharepoint') config = { tenant_id: "mock", client_id: "mock", client_secret: "mock", site_id: "mock", drive_id: "mock" };
+    } else {
+        // Collect real inputs
+        document.querySelectorAll('#configForm input').forEach(input => {
+            const key = input.id.replace('cfg_', '');
+            config[key] = input.value;
+        });
+    }
+
+    closeConnectModal();
+    
+    try {
+        const response = await fetch('/api/connect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source_type: type, connection_config: config })
+        });
+        if(response.ok) {
+            // Re-check status and wait a brief moment for scan to init before reloading
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            alert("Failed to connect.");
+        }
+    } catch (error) {
+        alert("Failed to connect due to network error.");
+    }
+}
+
+async function disconnectExternalData() {
+    try {
+        const response = await fetch('/api/disconnect', { method: 'POST' });
+        if(response.ok) {
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            alert("Failed to disconnect.");
+        }
+    } catch (error) {
+        alert("Failed to disconnect due to network error.");
+    }
+}
 
 </script>
 <script src="/static/js/dashboard.js?v=6"></script>
