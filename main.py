@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from fastapi import FastAPI, Depends, Request, Form, Response, Cookie
@@ -10,23 +11,44 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import database
-from database import get_db, Employee, FileMetadata, Finding, Notification
+from database import (
+    get_db,
+    Employee,
+    FileMetadata,
+    Finding,
+    Notification,
+    ActiveConnection as ActiveConnectionORM,
+    ScanJob as ScanJobORM,
+    SessionLocal,
+)
+from connect_models import ConnectRequest, ConnectSummary
+from scan_runner import run_background_scan as _run_background_scan
 
-import os
 from typing import Optional, List, Dict, Any
 
 app = FastAPI(title="Bosch GDPR Scan Engine API")
 
-from database import SessionLocal
+
+def _is_render_host() -> bool:
+    """Render sets RENDER=true; avoid heavy background scans on free tier."""
+    return os.getenv("RENDER", "").lower() in ("true", "1", "yes")
+
+
+def _background_scans_enabled() -> bool:
+    if os.getenv("DISABLE_BACKGROUND_SCAN", "").lower() in ("true", "1", "yes"):
+        return False
+    return not _is_render_host()
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 @app.on_event("startup")
 def startup_event():
     from database import engine, SessionLocal, FileMetadata, ScanJob
     import shutil
     import os
-    import threading
-    import uuid
-    from api import _run_background_scan
     import seed_json_data
     
     cache_path = "bosch_gdpr.cache.db"
@@ -941,22 +963,29 @@ def trigger_manual_scan(
     db.commit()
 
     import threading
-    threading.Thread(
-        target=_run_background_scan,
-        kwargs={
-            "scan_id": scan_id,
-            "folder_path": req.target_dir,
-            "mode": "full",
-            "ai_mode": "layered",
-            "strict_hash": False
-        },
-        daemon=True,
-    ).start()
+    if _background_scans_enabled():
+        threading.Thread(
+            target=_run_background_scan,
+            kwargs={
+                "scan_id": scan_id,
+                "folder_path": req.target_dir,
+                "mode": "full",
+                "ai_mode": "layered",
+                "strict_hash": False,
+            },
+            daemon=True,
+        ).start()
+        message = "Scan started in background"
+    else:
+        job.status = "failed"
+        job.error_message = "Background scans disabled on Render (use local demo or upload)."
+        db.commit()
+        message = "Scan skipped on cloud deploy (memory limits). Dashboard still works."
 
     return {
         "status": "success",
-        "message": "Scan started in background",
-        "scan_id": scan_id
+        "message": message,
+        "scan_id": scan_id,
     }
 
 
@@ -1604,8 +1633,7 @@ import uuid
 import json
 import threading
 from datetime import datetime
-from database import ActiveConnection as ActiveConnectionORM, ScanJob as ScanJobORM
-from api import _run_background_scan, ConnectRequest, ConnectSummary
+
 
 def _link_from_config(source_type: str, cfg: dict) -> str | None:
     """Pull the public share link out of the modal's per-source config field.
@@ -1642,20 +1670,27 @@ async def connect_source(req: ConnectRequest, db: Session = Depends(get_db)):
     db.add(job)
     db.commit()
 
-    threading.Thread(
-        target=_run_background_scan,
-        kwargs={
-            "scan_id": scan_id,
-            "folder_path": "./strict_drive",
-            "mode": "full",
-            "ai_mode": "layered",
-            "strict_hash": False,
-            "source_type": req.source_type,
-            "connection_config": req.connection_config or {}
-        },
-        daemon=True,
-    ).start()
-    return ConnectSummary(source_type=req.source_type, message="Connected and scan started.")
+    if _background_scans_enabled():
+        threading.Thread(
+            target=_run_background_scan,
+            kwargs={
+                "scan_id": scan_id,
+                "folder_path": "./strict_drive",
+                "mode": "full",
+                "ai_mode": "layered",
+                "strict_hash": False,
+                "source_type": req.source_type,
+                "connection_config": req.connection_config or {},
+            },
+            daemon=True,
+        ).start()
+        msg = "Connected and scan started."
+    else:
+        job.status = "failed"
+        job.error_message = "Background scan disabled on Render."
+        db.commit()
+        msg = "Connected (cloud mode: scan disabled to prevent OOM)."
+    return ConnectSummary(source_type=req.source_type, message=msg)
 
 @app.post("/api/disconnect", response_model=ConnectSummary)
 async def disconnect_source(db: Session = Depends(get_db)):
@@ -1709,13 +1744,20 @@ async def disconnect_source(db: Session = Depends(get_db)):
         db.add(job)
         db.commit()
 
-        threading.Thread(
-            target=_run_background_scan,
-            args=(scan_id, "./strict_drive", "full", "layered", False),
-            daemon=True,
-        ).start()
-        
-        return ConnectSummary(source_type="local", message="Disconnected and local scan started (No cache).")
+        if _background_scans_enabled():
+            threading.Thread(
+                target=_run_background_scan,
+                args=(scan_id, "./strict_drive", "full", "layered", False),
+                daemon=True,
+            ).start()
+            msg = "Disconnected and local scan started (No cache)."
+        else:
+            job.status = "failed"
+            job.error_message = "Background scan disabled on Render."
+            db.commit()
+            msg = "Disconnected (cloud mode: no rescan; seed or cache DB for demo data)."
+
+        return ConnectSummary(source_type="local", message=msg)
 @app.get("/api/connection_status")
 async def get_connection_status(db: Session = Depends(get_db)):
     active_conn = db.query(ActiveConnectionORM).first()

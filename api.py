@@ -61,13 +61,20 @@ except Exception:
     _streaming_scan = None
     _streaming_available = False
 
-# ── Optional: AI parser (graceful fallback to regex-only) ────────────────────
-try:
-    from src.ai_parser import AIParser
+# ── Optional: AI parser (lazy — avoids heavy init at import on small hosts) ──
+_ai_parser = None
 
-    _ai_parser: AIParser | None = AIParser()
-except Exception:
-    _ai_parser = None
+
+def _get_ai_parser():
+    global _ai_parser
+    if _ai_parser is None:
+        try:
+            from src.ai_parser import AIParser
+
+            _ai_parser = AIParser()
+        except Exception:
+            pass
+    return _ai_parser
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Logging
