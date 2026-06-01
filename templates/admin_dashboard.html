@@ -332,10 +332,26 @@
 // Global toggleAccountMenu and click-outside handler are now in dashboard.js
 
 // --- ADMIN SPECIFIC WIRING ---
+async function readApiJson(response) {
+    const text = await response.text();
+    let data = {};
+    if (text) {
+        try {
+            data = JSON.parse(text);
+        } catch (err) {
+            throw new Error(text.slice(0, 180));
+        }
+    }
+    if (!response.ok) {
+        throw new Error(data.detail || data.message || `HTTP ${response.status}`);
+    }
+    return data;
+}
+
 async function loadAdminKPIs() {
     try {
         const response = await fetch('/api/admin/kpis');
-        const data = await response.json();
+        const data = await readApiJson(response);
         document.getElementById('kpi-total-files').textContent = data.metrics.total_scanned_files;
         document.getElementById('kpi-total-size').textContent = data.metrics.total_volume_gb;
         document.getElementById('kpi-findings').textContent = data.metrics.total_flagged_files;
@@ -350,7 +366,7 @@ loadAdminKPIs();
 document.addEventListener("DOMContentLoaded", async () => {
     try {
         const response = await fetch('/api/admin/kpis');
-        const data = await response.json();
+        const data = await readApiJson(response);
         
         // Find the container where the cards live
         const alertsGrid = document.querySelector('.alerts-grid');
@@ -456,8 +472,7 @@ async function loadOverviewStats() {
     try {
         // Use the admin KPIs endpoint for organization-wide stats
         const response = await fetch('/api/admin/kpis');
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
+        const data = await readApiJson(response);
         
         let totalFiles = data.metrics.total_scanned_files || 0;
         let expiringSoon = data.metrics.expiring_soon || 0;
@@ -545,8 +560,7 @@ async function scanUploadedSources() {
 
     try {
         const response = await fetch('/api/admin/intake/upload', { method: 'POST', body: formData });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || 'Upload scan failed');
+        const data = await readApiJson(response);
         renderScanStatus('success', data);
         loadAdminKPIs();
         loadOverviewStats();
@@ -575,8 +589,7 @@ async function scanLinkedSource() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ source })
         });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || 'Source scan failed');
+        const data = await readApiJson(response);
         renderScanStatus('success', data);
         loadAdminKPIs();
         loadOverviewStats();
@@ -597,6 +610,7 @@ function escapeHtml(text) {
 window.setIntakeMode = setIntakeMode;
 window.scanUploadedSources = scanUploadedSources;
 window.scanLinkedSource = scanLinkedSource;
+window.readApiJson = readApiJson;
 
 </script>
 <script src="/static/js/dashboard.js?v=6"></script>
