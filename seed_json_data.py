@@ -67,36 +67,10 @@ def seed_data():
             db.commit()
             db.refresh(user)
 
-        # 4. Insert the File into the Database
-        file_meta = db.query(FileMetadata).filter(FileMetadata.file_path == doc['file_name']).first()
-        if not file_meta:
-            file_meta = FileMetadata(
-                file_path=doc['file_name'],
-                owner_employee_id=user.employee_id,
-                size_bytes=len(content),
-                file_hash=hashlib.md5(content.encode()).hexdigest(),
-                last_modified=datetime.fromisoformat(doc['last_modified'])
-            )
-            db.add(file_meta)
-            db.commit()
-            db.refresh(file_meta)
+        # 4. Insert the File into the Database (DISABLED - using real strict_drive data)
+        # 5. Populate the Dashboard with GDPR Findings (DISABLED - using real strict_drive data)
 
-        # 5. Populate the Dashboard with GDPR Findings (if expected to be flagged)
-        if expected['should_flag']:
-            for pii_type, count in expected.get('exact_match_counts', {}).items():
-                finding = Finding(
-                    file_id=file_meta.id,
-                    category=pii_type.upper().replace("_", " "),
-                    confidence_score=0.99,
-                    flagged_snippet=f"[{pii_type} Match found in {doc['file_name']}]",
-                    reasoning="Detected via Workflow JSON Rules",
-                    status="pending_review",
-                    review_status="pending_review",
-                )
-                db.add(finding)
-            db.commit()
-
-    print("✅ Database successfully populated with all 50 documents and user accounts!")
+    print("✅ Database successfully populated with user accounts! (Dummy file seeding disabled)")
 
 if __name__ == "__main__":
     seed_data()

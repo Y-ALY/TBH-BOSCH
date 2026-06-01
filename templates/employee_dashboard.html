@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="/static/css/dashboard.css?v=8">
+<link rel="stylesheet" href="/static/css/dashboard.css?v=11">
 
 <!-- Apply saved theme before paint to avoid flash -->
 <script>
@@ -238,44 +238,7 @@
 
         </div>
 
-        <div class="alerts-grid">
-
-            <div class="glass-card alert-card">
-
-                <h3>passport.pdf</h3>
-
-                <p>Identity Document</p>
-
-                <span class="danger">
-                    Retention Expired
-                </span>
-
-            </div>
-
-            <div class="glass-card alert-card">
-
-                <h3>salary_2023.pdf</h3>
-
-                <p>Financial Data</p>
-
-                <span class="warning">
-                    Expiring Soon
-                </span>
-
-            </div>
-
-            <div class="glass-card alert-card">
-
-                <h3>contract_old.pdf</h3>
-
-                <p>Employment Data</p>
-
-                <span class="danger">
-                    Delete Candidate
-                </span>
-
-            </div>
-
+        <div class="alerts-list">
         </div>
 
     </section>
@@ -350,21 +313,21 @@ document.addEventListener("DOMContentLoaded", async () => {
         const data = await response.json();
         
         // Find the container where the cards live
-        const alertsGrid = document.querySelector('.alerts-grid');
+        const alertsList = document.querySelector('.alerts-list');
         
         // Clear out the hardcoded dummy HTML cards
-        alertsGrid.innerHTML = ""; 
+        alertsList.innerHTML = ""; 
         
         // If the database is clean, show a success message
         if (!data.findings || data.findings.length === 0) {
-            alertsGrid.innerHTML = "<p style='color: var(--text-secondary);'>No compliance violations found. Great job!</p>";
+            alertsList.innerHTML = "<p style='color: var(--text-secondary);'>No compliance violations found. Great job!</p>";
             return;
         }
         
-        // Loop through the real database findings and generate the UI cards
-        data.findings.forEach(finding => {
+        // Loop through the real database findings and generate the UI cards (Top 5 only)
+        data.findings.slice(0, 5).forEach(finding => {
             const card = document.createElement('div');
-            card.className = 'glass-card alert-card';
+            card.className = 'alert-list-item';
             const cardId = `finding-card-${finding.file_id}`;
             card.id = cardId;
             
@@ -374,17 +337,17 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (finding.expired) {
                 statusBadge = `<span style="font-size: 11px; padding: 2px 6px; border-radius: 2px; border: 1px solid var(--border-subtle); color: var(--text-secondary); font-weight:500; text-transform:uppercase; letter-spacing:0.5px;">RETENTION EXPIRED</span>`;
                 actionButton = `
-                    <div style="margin-top: 15px; display: flex; gap: 10px;">
+                    <div style="display: flex; gap: 10px;">
                         <button 
                             onclick="handleExtendRetention('${finding.file_id}', '${employeeId}', '${cardId}')"
-                            style="flex: 1; padding: 8px 16px; background: transparent; color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 2px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13px; transition: all 0.3s ease;"
+                            style="flex: 1; padding: 6px 12px; background: transparent; color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 2px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13px; transition: all 0.3s ease;"
                             onmouseover="this.style.background='var(--bg-card-hover)'; this.style.borderColor='var(--border-hover)'"
                             onmouseout="this.style.background='transparent'; this.style.borderColor='var(--border-subtle)'">
                             Extend Retention
                         </button>
                         <button 
                             onclick="handleDeleteExpired('${finding.file_id}', '${employeeId}', '${cardId}')"
-                            style="flex: 1; padding: 8px 16px; background: transparent; color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 2px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13px; transition: all 0.3s ease;"
+                            style="flex: 1; padding: 6px 12px; background: transparent; color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 2px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13px; transition: all 0.3s ease;"
                             onmouseover="this.style.background='var(--bg-card-hover)'; this.style.borderColor='var(--border-hover)'"
                             onmouseout="this.style.background='transparent'; this.style.borderColor='var(--border-subtle)'">
                             Delete File
@@ -394,24 +357,24 @@ document.addEventListener("DOMContentLoaded", async () => {
             } else {
                 statusBadge = `<span style="font-size: 11px; padding: 2px 6px; border-radius: 2px; border: 1px solid var(--border-subtle); color: var(--text-secondary); font-weight:500; text-transform:uppercase; letter-spacing:0.5px;">ACTIVE PII</span>`;
                 actionButton = `
-                    <div style="position: relative; display: inline-block; margin-top: 15px;" class="action-dropdown-container">
+                    <div style="position: relative; display: inline-block;" class="action-dropdown-container">
                         <button 
                             onclick="toggleActionMenu('menu-${finding.finding_id}')"
-                            style="padding: 8px 16px; background: transparent; color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 4px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13px; transition: all 0.2s ease; display: flex; align-items: center; gap: 8px;"
+                            style="padding: 6px 12px; background: transparent; color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 4px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13px; transition: all 0.2s ease; display: flex; align-items: center; gap: 6px;"
                             onmouseover="this.style.background='var(--bg-card-hover)'; this.style.borderColor='var(--border-hover)'"
                             onmouseout="this.style.background='transparent'; this.style.borderColor='var(--border-subtle)'">
                             Take Action
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                         </button>
-                        <div id="menu-${finding.finding_id}" class="action-dropdown-menu" style="display: none; position: absolute; top: 100%; left: 0; margin-top: 8px; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); min-width: 230px; z-index: 100; overflow: hidden; font-family: 'Inter', sans-serif;">
+                        <div id="menu-${finding.finding_id}" class="action-dropdown-menu" style="display: none;">
                             <div style="padding: 6px;">
-                                <button onclick="handleAction('${finding.finding_id}', 'false_positive', 'This is not personal data')" class="action-menu-item" style="width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; color: var(--text-primary); cursor: pointer; border-radius: 4px; transition: background 0.2s ease;">This is not personal data</button>
-                                <button onclick="handleAction('${finding.finding_id}', 'false_positive', 'False positive')" class="action-menu-item" style="width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; color: var(--text-primary); cursor: pointer; border-radius: 4px; transition: background 0.2s ease;">False positive</button>
-                                <button onclick="handleAction('${finding.finding_id}', 'keep', 'Keep this file')" class="action-menu-item" style="width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; color: var(--text-primary); cursor: pointer; border-radius: 4px; transition: background 0.2s ease;">Keep this file</button>
-                                <button onclick="handleAction('${finding.finding_id}', 'export', 'Export my data')" class="action-menu-item" style="width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; color: var(--text-primary); cursor: pointer; border-radius: 4px; transition: background 0.2s ease;">Export my data</button>
-                                <button onclick="handleAction('${finding.finding_id}', 'explain', 'Explain why this was flagged')" class="action-menu-item" style="width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; color: var(--text-primary); cursor: pointer; border-radius: 4px; transition: background 0.2s ease;">Explain why this was flagged</button>
+                                <button onclick="handleAction('${finding.finding_id}', 'false_positive', 'This is not personal data')" class="action-menu-item">This is not personal data</button>
+                                <button onclick="handleAction('${finding.finding_id}', 'false_positive', 'False positive')" class="action-menu-item">False positive</button>
+                                <button onclick="handleAction('${finding.finding_id}', 'keep', 'Keep this file')" class="action-menu-item">Keep this file</button>
+                                <button onclick="handleAction('${finding.finding_id}', 'export', 'Export my data')" class="action-menu-item">Export my data</button>
+                                <button onclick="handleAction('${finding.finding_id}', 'explain', 'Explain why this was flagged')" class="action-menu-item">Explain why this was flagged</button>
                                 <div style="height: 1px; background: var(--border-subtle); margin: 6px 0;"></div>
-                                <button onclick="handleAction('${finding.finding_id}', 'delete', 'Request deletion')" class="action-menu-item" style="width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; font-size: 13px; color: #ff4d6a; cursor: pointer; border-radius: 4px; transition: background 0.2s ease; font-weight: 500;">Request deletion</button>
+                                <button onclick="handleAction('${finding.finding_id}', 'delete', 'Request deletion')" class="action-menu-item danger-text">Request deletion</button>
                             </div>
                         </div>
                     </div>
@@ -419,20 +382,22 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
             
             card.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
+                <div class="alert-list-item-content">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                        <h3 style="word-break: break-all; margin: 0; font-size: 16px;">${finding.file_name}</h3>
+                        <h3 style="word-break: break-all; margin: 0; font-size: 15px;">${finding.file_name}</h3>
+                        <span style="color: var(--text-secondary); font-size: 13px;">• ${finding.category}</span>
+                        ${statusBadge}
                     </div>
-                    ${statusBadge}
+                    <div style="font-family: 'Space Grotesk', monospace; font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        ${finding.flagged_snippet}
+                    </div>
                 </div>
-                <p style="margin: 0 0 10px 0; font-size: 13px; color: var(--text-secondary);">${finding.category}</p>
-                <div style="margin-bottom: 15px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); padding: 8px; border-radius: 2px; font-family: 'Space Grotesk', monospace; font-size: 12px; color: var(--text-secondary);">
-                    ${finding.flagged_snippet}
+                <div class="alert-list-item-actions">
+                    ${actionButton}
                 </div>
-                ${actionButton}
             `;
-            alertsGrid.appendChild(card);
+            alertsList.appendChild(card);
         });
         
     } catch (error) {
@@ -519,11 +484,21 @@ async function handleExtendRetention(fileId, employeeId, cardElementId) {
 // Dropdown functionality
 function toggleActionMenu(menuId) {
     document.querySelectorAll('.action-dropdown-menu').forEach(menu => {
-        if (menu.id !== menuId) menu.style.display = 'none';
+        if (menu.id !== menuId) {
+            menu.style.display = 'none';
+            const card = menu.closest('.alert-list-item');
+            if (card) card.style.zIndex = '1';
+        }
     });
     const menu = document.getElementById(menuId);
     if (menu) {
-        menu.style.display = menu.style.display === 'none' || !menu.style.display ? 'block' : 'none';
+        const isOpening = menu.style.display === 'none' || !menu.style.display;
+        menu.style.display = isOpening ? 'block' : 'none';
+        
+        const card = menu.closest('.alert-list-item');
+        if (card) {
+            card.style.zIndex = isOpening ? '50' : '1';
+        }
     }
 }
 
@@ -531,6 +506,8 @@ document.addEventListener('click', (e) => {
     if (!e.target.closest('.action-dropdown-container')) {
         document.querySelectorAll('.action-dropdown-menu').forEach(menu => {
             menu.style.display = 'none';
+            const card = menu.closest('.alert-list-item');
+            if (card) card.style.zIndex = '1';
         });
     }
 });
