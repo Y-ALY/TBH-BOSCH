@@ -93,9 +93,18 @@ class TestMainAppPages:
         # Search requires auth; without cookie should redirect or 401
         assert response.status_code in (403, 401, 307)
 
+    def test_admin_intake_requires_auth(self, main_test_client, tmp_path):
+        main_test_client.cookies.clear()
+        response = main_test_client.post(
+            "/api/admin/intake/link",
+            json={"source": str(tmp_path)},
+        )
+        assert response.status_code == 403
+
     def test_trigger_extraction_persists_new_text_files(self, main_test_client, engine, tmp_path):
         from database import FileMetadata, Finding
 
+        main_test_client.cookies.set("session_emp_id", "BX-ADMIN")
         source_dir = tmp_path / "intake"
         source_dir.mkdir()
         source_file = source_dir / "employee_record.txt"
@@ -126,6 +135,7 @@ class TestMainAppPages:
     def test_intake_upload_feeds_dashboard_database(self, main_test_client, engine):
         from database import FileMetadata, Finding
 
+        main_test_client.cookies.set("session_emp_id", "BX-ADMIN")
         response = main_test_client.post(
             "/api/admin/intake/upload",
             files=[
@@ -150,6 +160,35 @@ class TestMainAppPages:
             file_row = db.query(FileMetadata).filter(FileMetadata.file_path.like("%uploaded_pii.txt")).first()
             assert file_row is not None
             assert db.query(Finding).filter(Finding.file_id == file_row.id).count() >= 1
+        finally:
+            db.close()
+
+    def test_intake_link_scans_local_directory(self, main_test_client, engine, tmp_path):
+        from database import FileMetadata, Finding
+
+        main_test_client.cookies.set("session_emp_id", "BX-ADMIN")
+        source_dir = tmp_path / "linked-source"
+        source_dir.mkdir()
+        source_file = source_dir / "linked_pii.txt"
+        source_file.write_text(
+            "Name: Luca Bauer\nEmail: luca.bauer@bosch.com\nIBAN: DE89 3704 0044 0532 0130 00\n",
+            encoding="utf-8",
+        )
+
+        response = main_test_client.post(
+            "/api/admin/intake/link",
+            json={"source": str(source_dir)},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["admin_aggregates"]["total_scanned_files"] == 1
+        assert data["admin_aggregates"]["total_findings"] >= 2
+
+        db = sessionmaker(bind=engine)()
+        try:
+            file_row = db.query(FileMetadata).filter(FileMetadata.file_path == str(source_file)).first()
+            assert file_row is not None
+            assert db.query(Finding).filter(Finding.file_id == file_row.id).count() >= 2
         finally:
             db.close()
 

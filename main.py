@@ -179,6 +179,13 @@ def mask_sensitive_data(text: str) -> str:
     return f"{text[0]}{'*' * (len(text) - 2)}{text[-1]}"
 
 
+def require_admin_session(session_emp_id: Optional[str] = Cookie(None)) -> str:
+    """Require the demo admin session for organization-wide scan operations."""
+    if session_emp_id != "BX-ADMIN":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return session_emp_id
+
+
 @app.get("/")
 def login_page(request: Request):
     return templates.TemplateResponse(
@@ -1348,6 +1355,7 @@ class TriggerExtractionRequest(PydanticBaseModel):
 @app.post("/api/admin/trigger-extraction")
 def trigger_extraction(
     req: TriggerExtractionRequest = TriggerExtractionRequest(),
+    _admin_emp_id: str = Depends(require_admin_session),
     db: Session = Depends(get_db),
 ):
     """Run the memory-safe extraction pipeline on a target directory.
@@ -1397,6 +1405,7 @@ def _download_direct_url(source: str, destination_dir: Path) -> Path:
 @app.post("/api/admin/intake/link")
 def scan_link_or_path(
     req: IntakeLinkRequest,
+    _admin_emp_id: str = Depends(require_admin_session),
     db: Session = Depends(get_db),
 ):
     """Scan a local directory/file path, file:// URL, or direct downloadable URL."""
@@ -1435,6 +1444,7 @@ def scan_link_or_path(
 @app.post("/api/admin/intake/upload")
 async def scan_uploaded_sources(
     files: List[UploadFile] = File(...),
+    _admin_emp_id: str = Depends(require_admin_session),
     db: Session = Depends(get_db),
 ):
     """Upload one or many files, persist them, scan them, and refresh dashboard data."""

@@ -17,6 +17,7 @@ __pycache__/
 # Generated output artifacts
 *_results.json
 *_output.json
+data/uploads/
 
 # Temp diff files
 diff.txt
