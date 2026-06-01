@@ -541,10 +541,9 @@ def search_employees(
     q_lower = f"%{q.lower()}%"
     from sqlalchemy import or_, func, desc
     
-    # 1. Fetch matching employees and their file counts first
-    matching_emps_query = (
-        db.query(Employee, func.count(FileMetadata.id).label("file_count"))
-        .outerjoin(FileMetadata, (FileMetadata.owner_employee_id == Employee.employee_id) & ~FileMetadata.file_path.startswith("[DELETED]"))
+    # 1. Search employees first (Instantly limited to 50)
+    matched_emps = (
+        db.query(Employee)
         .filter(
             or_(
                 func.lower(Employee.first_name).like(q_lower),
@@ -554,19 +553,31 @@ def search_employees(
                 func.lower(Employee.first_name + " " + Employee.last_name).like(q_lower),
             )
         )
-        .group_by(Employee.id)
-        .order_by(desc("file_count"), Employee.last_name)
         .limit(50)
         .all()
     )
     
-    # Extract the matched employee IDs
-    emp_ids = [emp.employee_id for emp, _ in matching_emps_query]
-    
-    if not emp_ids:
+    if not matched_emps:
         return []
 
-    # 2. Fetch findings count ONLY for these specific matched employees
+    emp_ids = [e.employee_id for e in matched_emps]
+
+    # 2. Get file counts ONLY for these specific employees (Index scan)
+    file_counts = (
+        db.query(
+            FileMetadata.owner_employee_id,
+            func.count(FileMetadata.id)
+        )
+        .filter(
+            FileMetadata.owner_employee_id.in_(emp_ids),
+            ~FileMetadata.file_path.startswith("[DELETED]")
+        )
+        .group_by(FileMetadata.owner_employee_id)
+        .all()
+    )
+    file_count_map = {emp_id: count for emp_id, count in file_counts}
+
+    # 3. Get finding counts ONLY for these specific employees (Index scan)
     findings_counts = (
         db.query(
             FileMetadata.owner_employee_id,
@@ -582,11 +593,11 @@ def search_employees(
         .group_by(FileMetadata.owner_employee_id)
         .all()
     )
-    
     findings_map = {emp_id: count for emp_id, count in findings_counts}
     
+    # 4. Assemble results and sort by file_count descending
     results = []
-    for emp, file_count in matching_emps_query:
+    for emp in matched_emps:
         results.append({
             "employee_id": emp.employee_id,
             "first_name": emp.first_name,
@@ -594,9 +605,11 @@ def search_employees(
             "email": emp.email,
             "department": emp.department,
             "location": emp.location,
-            "file_count": file_count,
+            "file_count": file_count_map.get(emp.employee_id, 0),
             "findings_count": findings_map.get(emp.employee_id, 0),
         })
+        
+    results.sort(key=lambda x: x["file_count"], reverse=True)
     return results
 
 @app.post("/api/admin/extend-retention/{file_id}")
