@@ -82,6 +82,9 @@ def startup_event():
                 else:
                     print("No cache found. Database is empty. Seeding baseline data...")
                     seed_json_data.seed_data()
+                    from seed_render_demo import seed_render_demo
+
+                    seed_render_demo()
 
                     # HACKATHON FIX: Disable auto-background scan on Render Free Tier
                     # It requires too much memory and CPU (OOM kills the server, causing 502 Bad Gateway)
@@ -163,6 +166,7 @@ def login(
         redirect = RedirectResponse(url="/employee-dashboard", status_code=303)
         
     redirect.set_cookie(key="session_emp_id", value=user.employee_id)
+    redirect.set_cookie(key="session_role", value=role, httponly=True, samesite="lax")
     return redirect
 
 
@@ -301,11 +305,14 @@ from sqlalchemy import func
 
 @app.get("/api/user-details/{employee_id}")
 def get_user_details(
-    employee_id: str, 
+    employee_id: str,
     session_emp_id: Optional[str] = Cookie(None),
-    db: Session = Depends(get_db)
+    session_role: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db),
 ):
     from fastapi import HTTPException
+    from auth_helpers import is_admin_session
+
     if not session_emp_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
         
@@ -332,11 +339,10 @@ def get_user_details(
     if resolved_emp:
         employee_id = resolved_emp.employee_id
 
-    if session_emp_id in ("BX-ADMIN", "BX-17335"):
-        session_emp_id = "BX-ADMIN"
-    if session_emp_id != "BX-ADMIN" and session_emp_id != employee_id and employee_id != "all":
+    is_admin = is_admin_session(session_emp_id, session_role, db)
+    if not is_admin and session_emp_id != employee_id and employee_id != "all":
         raise HTTPException(status_code=403, detail="Forbidden")
-    if session_emp_id != "BX-ADMIN" and employee_id == "all":
+    if not is_admin and employee_id == "all":
         raise HTTPException(status_code=403, detail="Forbidden")
 
     if employee_id == "all":
@@ -449,12 +455,13 @@ def get_user_details(
 @app.get("/api/admin/kpis")
 def get_admin_kpis(
     session_emp_id: Optional[str] = Cookie(None),
-    db: Session = Depends(get_db)
+    session_role: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db),
 ):
     from fastapi import HTTPException
-    if session_emp_id in ("BX-ADMIN", "BX-17335"):
-        session_emp_id = "BX-ADMIN"
-    if session_emp_id != "BX-ADMIN":
+    from auth_helpers import is_admin_session
+
+    if not is_admin_session(session_emp_id, session_role, db):
         raise HTTPException(status_code=403, detail="Forbidden")
         
     from datetime import datetime, timedelta
@@ -548,14 +555,15 @@ def get_admin_kpis(
 
 @app.get("/api/admin/employees/search")
 def search_employees(
-    q: str, 
+    q: str,
     session_emp_id: Optional[str] = Cookie(None),
-    db: Session = Depends(get_db)
+    session_role: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db),
 ):
     from fastapi import HTTPException
-    if session_emp_id in ("BX-ADMIN", "BX-17335"):
-        session_emp_id = "BX-ADMIN"
-    if session_emp_id != "BX-ADMIN":
+    from auth_helpers import is_admin_session
+
+    if not is_admin_session(session_emp_id, session_role, db):
         raise HTTPException(status_code=403, detail="Forbidden")
         
     if not q:
@@ -687,9 +695,10 @@ class ActionRequest(BaseModel):
 
 @app.get("/api/employee/files/{employee_id}")
 def get_employee_files(
-    employee_id: str, 
+    employee_id: str,
     session_emp_id: Optional[str] = Cookie(None),
-    db: Session = Depends(get_db)
+    session_role: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db),
 ):
     from fastapi import HTTPException
     if not session_emp_id:
@@ -720,9 +729,9 @@ def get_employee_files(
     if resolved_emp:
         employee_id = resolved_emp.employee_id
 
-    if session_emp_id in ("BX-ADMIN", "BX-17335"):
-        session_emp_id = "BX-ADMIN"
-    if session_emp_id != "BX-ADMIN" and session_emp_id != employee_id:
+    from auth_helpers import is_admin_session
+
+    if not is_admin_session(session_emp_id, session_role, db) and session_emp_id != employee_id:
         raise HTTPException(status_code=403, detail="Forbidden")
 
     # 1. Find all files owned by this specific employee
@@ -1192,18 +1201,19 @@ def search_findings(
     skip: int = QueryParam(0, ge=0),
     limit: int = QueryParam(50, ge=1, le=1000),
     session_emp_id: Optional[str] = Cookie(None),
+    session_role: Optional[str] = Cookie(None),
     db: Session = Depends(get_db),
 ):
     from fastapi import HTTPException
+    from auth_helpers import is_admin_session
+
     if not session_emp_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     """Search findings from the live SQLite database."""
     query = db.query(Finding)
 
-    if session_emp_id in ("BX-ADMIN", "BX-17335"):
-        session_emp_id = "BX-ADMIN"
-    if session_emp_id != "BX-ADMIN":
+    if not is_admin_session(session_emp_id, session_role, db):
         query = query.join(FileMetadata, Finding.file_id == FileMetadata.id)\
                      .filter(FileMetadata.owner_employee_id == session_emp_id)
 
@@ -1225,7 +1235,7 @@ def search_findings(
         else:
             query = query.filter(Finding.type == type)
 
-    if owner and session_emp_id == "BX-ADMIN":
+    if owner and is_admin_session(session_emp_id, session_role, db):
         query = query.filter(Finding.assigned_owner == owner)
     if resolved is not None:
         query = query.filter(Finding.owner_resolved == resolved)
