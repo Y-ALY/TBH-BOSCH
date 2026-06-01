@@ -271,24 +271,39 @@
 
     </section>
 
-    <section class="glass-card explorer reveal">
+    <section class="glass-card explorer intake-panel reveal">
 
-        <h2>Upload File</h2>
+        <div class="intake-copy">
+            <span class="eyebrow">Scan Intake</span>
+            <h2>Connect a source, scan it, then analyze the results here.</h2>
+            <p>
+                Upload a batch of files or paste a local/shared source path. Results are written into the dashboard database for KPI review, owner drilldown, and retention actions.
+            </p>
+        </div>
 
-        <p>
-            Select a file to scan for GDPR-relevant personal data. Supported formats: PNG, JPEG, TIFF, BMP, WebP, PDF.
-        </p>
+        <div class="intake-tabs" role="tablist" aria-label="Scan source type">
+            <button id="uploadTab" class="intake-tab active" type="button" onclick="setIntakeMode('upload')">Upload</button>
+            <button id="linkTab" class="intake-tab" type="button" onclick="setIntakeMode('link')">Link or Path</button>
+        </div>
 
-        <input type="file" id="fileUploadInput" accept="image/png,image/jpeg,image/tiff,image/bmp,image/webp,image/gif,application/pdf"
-               class="upload-file-input" />
-
-        <div class="upload-actions">
-            <button id="scanUploadBtn" class="explore-btn" onclick="uploadAndScan()" disabled>
-                Scan File
+        <div id="uploadIntake" class="intake-mode active">
+            <input type="file" id="sourceUploadInput" multiple
+                   accept=".txt,.csv,.log,.json,.xml,.html,.md,.pdf,.docx,.xlsx,.xls,image/png,image/jpeg,image/tiff,image/bmp,image/webp,image/gif,application/pdf"
+                   class="upload-file-input" />
+            <button id="scanUploadBtn" class="explore-btn" onclick="scanUploadedSources()" disabled>
+                Start Scan
             </button>
         </div>
 
-        <div id="uploadResult" class="upload-result" style="display: none;"></div>
+        <div id="linkIntake" class="intake-mode">
+            <input type="text" id="sourceLinkInput" class="source-link-input"
+                   placeholder="./demo_drive_rich or file:///Users/.../folder" />
+            <button id="scanLinkBtn" class="explore-btn" onclick="scanLinkedSource()">
+                Scan Source
+            </button>
+        </div>
+
+        <div id="scanStatus" class="scan-status" style="display: none;"></div>
 
     </section>
 
@@ -473,69 +488,103 @@ async function loadOverviewStats() {
 // Fire the overview stats fetch on page load
 loadOverviewStats();
 
-// --- FILE UPLOAD + OCR SCAN ---
-const fileInput = document.getElementById('fileUploadInput');
-const scanBtn = document.getElementById('scanUploadBtn');
-const resultBox = document.getElementById('uploadResult');
+// --- SOURCE INTAKE SCAN ---
+const sourceUploadInput = document.getElementById('sourceUploadInput');
+const scanUploadBtn = document.getElementById('scanUploadBtn');
+const scanLinkBtn = document.getElementById('scanLinkBtn');
+const sourceLinkInput = document.getElementById('sourceLinkInput');
+const scanStatus = document.getElementById('scanStatus');
 
-fileInput.addEventListener('change', function() {
-    scanBtn.disabled = !(this.files && this.files.length > 0);
-    resultBox.style.display = 'none';
+sourceUploadInput.addEventListener('change', function() {
+    scanUploadBtn.disabled = !(this.files && this.files.length > 0);
+    scanStatus.style.display = 'none';
 });
 
-async function uploadAndScan() {
-    const file = fileInput.files[0];
-    if (!file) return;
+function setIntakeMode(mode) {
+    document.getElementById('uploadTab').classList.toggle('active', mode === 'upload');
+    document.getElementById('linkTab').classList.toggle('active', mode === 'link');
+    document.getElementById('uploadIntake').classList.toggle('active', mode === 'upload');
+    document.getElementById('linkIntake').classList.toggle('active', mode === 'link');
+    scanStatus.style.display = 'none';
+}
 
+function renderScanStatus(state, dataOrMessage) {
+    scanStatus.style.display = 'block';
+    if (state === 'loading') {
+        scanStatus.innerHTML = '<div class="scan-progress"><span></span></div><p>Scanning source and writing findings into the dashboard...</p>';
+        return;
+    }
+    if (state === 'error') {
+        scanStatus.innerHTML = '<div class="scan-summary error"><strong>Scan failed</strong><p>' + escapeHtml(dataOrMessage) + '</p></div>';
+        return;
+    }
+
+    const aggs = dataOrMessage.admin_aggregates || {};
+    scanStatus.innerHTML =
+        '<div class="scan-summary success">' +
+        '<strong>Scan complete</strong>' +
+        '<div class="scan-summary-grid">' +
+        '<span><b>' + (aggs.total_scanned_files || 0) + '</b> files</span>' +
+        '<span><b>' + (aggs.total_size_human || '0 B') + '</b> scanned</span>' +
+        '<span><b>' + (aggs.total_findings || 0) + '</b> findings</span>' +
+        '<span><b>' + (dataOrMessage.db_findings_added || 0) + '</b> new in DB</span>' +
+        '<span><b>' + (aggs.scan_duration_seconds || 0) + 's</b> engine time</span>' +
+        '</div>' +
+        '<a href="/data-points" class="scan-result-link">Analyze findings</a>' +
+        '</div>';
+}
+
+async function scanUploadedSources() {
+    if (!sourceUploadInput.files || sourceUploadInput.files.length === 0) return;
     const formData = new FormData();
-    formData.append('file', file);
+    Array.from(sourceUploadInput.files).forEach(file => formData.append('files', file));
 
-    scanBtn.disabled = true;
-    scanBtn.textContent = 'Scanning...';
-    resultBox.style.display = 'block';
-    resultBox.innerHTML = '<div class="alert-card glass-card" style="padding: 20px; text-align: left;"><p style="color: var(--text-secondary);">Scanning file for personal data...</p></div>';
+    scanUploadBtn.disabled = true;
+    scanUploadBtn.textContent = 'Scanning...';
+    renderScanStatus('loading');
 
     try {
-        const response = await fetch('/api/scan/file', {
+        const response = await fetch('/api/admin/intake/upload', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Upload scan failed');
+        renderScanStatus('success', data);
+        loadAdminKPIs();
+        loadOverviewStats();
+    } catch (err) {
+        renderScanStatus('error', err.message);
+    } finally {
+        scanUploadBtn.disabled = false;
+        scanUploadBtn.textContent = 'Start Scan';
+    }
+}
+
+async function scanLinkedSource() {
+    const source = sourceLinkInput.value.trim();
+    if (!source) {
+        renderScanStatus('error', 'Enter a local path, file:// URL, or direct downloadable file URL.');
+        return;
+    }
+
+    scanLinkBtn.disabled = true;
+    scanLinkBtn.textContent = 'Scanning...';
+    renderScanStatus('loading');
+
+    try {
+        const response = await fetch('/api/admin/intake/link', {
             method: 'POST',
-            body: formData,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source })
         });
         const data = await response.json();
-
-        if (!response.ok) {
-            resultBox.innerHTML = '<div class="alert-card glass-card" style="padding: 20px; text-align: left; border-color: var(--accent-red);"><p style="color: #ff4d6a;">Scan failed: ' + (data.detail || 'Upload error') + '</p></div>';
-            return;
-        }
-
-        let flagsHtml = '';
-        if (data.flags && data.flags.length > 0) {
-            flagsHtml = '<div style="margin-top: 16px;"><h4 style="font-size: 13px; font-weight: 600; color: var(--accent-red); margin-bottom: 8px;">Flagged Findings</h4>' +
-                data.flags.map(f =>
-                    '<div style="padding: 10px 14px; margin-bottom: 6px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); background: var(--bg-card);">' +
-                    '<span style="font-weight: 600; font-size: 13px;">' + escapeHtml(f.type) + '</span>' +
-                    '<code style="display: block; font-size: 12px; color: var(--text-secondary); margin-top: 2px;">' + escapeHtml(f.value) + '</code>' +
-                    '<span style="font-size: 11px; color: var(--text-muted);">Risk: ' + (f.risk_level || 'medium') + '</span>' +
-                    '</div>'
-                ).join('') + '</div>';
-        } else {
-            flagsHtml = '<p style="color: #22c55e; margin-top: 12px; font-size: 13px;">No personal data detected.</p>';
-        }
-
-        const cacheTag = data.cache_hit ? '<span style="font-size: 11px; color: var(--text-muted);"> · cached result</span>' : '';
-
-        resultBox.innerHTML =
-            '<div class="alert-card glass-card" style="padding: 20px; text-align: left;">' +
-            '<h3 style="font-size: 15px; font-weight: 500; margin-bottom: 4px;">Scan Complete</h3>' +
-            '<p style="font-size: 12px; color: var(--text-secondary);">Status: ' + data.status + cacheTag + '</p>' +
-            (data.text ? '<details style="margin-top: 12px;"><summary style="cursor: pointer; font-size: 13px; font-weight: 500;">Extracted Text</summary><pre style="margin-top: 8px; padding: 12px; border-radius: var(--radius-md); background: var(--bg-secondary); font-size: 12px; max-height: 180px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5;">' + escapeHtml(data.text) + '</pre></details>' : '') +
-            flagsHtml +
-            '</div>';
-
+        if (!response.ok) throw new Error(data.detail || 'Source scan failed');
+        renderScanStatus('success', data);
+        loadAdminKPIs();
+        loadOverviewStats();
     } catch (err) {
-        resultBox.innerHTML = '<div class="alert-card glass-card" style="padding: 20px; text-align: left; border-color: var(--accent-red);"><p style="color: #ff4d6a;">Network error: ' + err.message + '</p></div>';
+        renderScanStatus('error', err.message);
     } finally {
-        scanBtn.disabled = false;
-        scanBtn.textContent = 'Scan File';
+        scanLinkBtn.disabled = false;
+        scanLinkBtn.textContent = 'Scan Source';
     }
 }
 
@@ -544,6 +593,10 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+window.setIntakeMode = setIntakeMode;
+window.scanUploadedSources = scanUploadedSources;
+window.scanLinkedSource = scanLinkedSource;
 
 </script>
 <script src="/static/js/dashboard.js?v=6"></script>
