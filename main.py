@@ -58,13 +58,12 @@ def startup_event():
     try:
         gz_cache_path = cache_path + ".gz"
         if os.path.exists(gz_cache_path):
-            if not os.path.exists(cache_path) or os.path.getmtime(gz_cache_path) > os.path.getmtime(cache_path):
-                print("Compressed cache found! Decompressing...")
-                import gzip
-                with gzip.open(gz_cache_path, "rb") as f_in:
-                    with open(cache_path, "wb") as f_out:
-                        shutil.copyfileobj(f_in, f_out)
-                print("Decompression complete.")
+            print("Compressed cache found! ALWAYS Decompressing on startup to guarantee freshness...")
+            import gzip
+            with gzip.open(gz_cache_path, "rb") as f_in:
+                with open(cache_path, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            print("Decompression complete.")
 
         if os.path.exists(cache_path):
             print("Cache found! Restoring instant cached database...")
