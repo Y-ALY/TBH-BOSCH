@@ -44,6 +44,9 @@ class BulkWriter:
         
         # Lazy cache for employee IDs to assign random owners to files
         self._employee_ids: list[str] | None = None
+        
+        # Load the true mapping of file names to BX-IDs
+        self._owner_hints: dict[str, str] | None = None
 
     # ------------------------------------------------------------------
     # public API
@@ -80,6 +83,23 @@ class BulkWriter:
         if self._total_queued >= self._batch_size:
             self.flush()
 
+        if self._owner_hints is None:
+            self._owner_hints = {}
+            import os
+            hints_path = "strict_drive/owner_hints.jsonl"
+            if os.path.exists(hints_path):
+                import json, hashlib
+                with open(hints_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if not line.strip(): continue
+                        data = json.loads(line)
+                        email = data.get("email")
+                        fpath = data.get("file_path")
+                        if email and fpath:
+                            fname = fpath.split("/")[-1]
+                            emp_id_int = int(hashlib.md5(email.encode()).hexdigest(), 16) % 90000 + 10000
+                            self._owner_hints[fname] = f"BX-{emp_id_int}"
+
         # Load employee IDs if not loaded yet
         if self._employee_ids is None:
             from database import Employee
@@ -91,10 +111,16 @@ class BulkWriter:
                 self._employee_ids = ["BX-17335"]  # Fallback
                 
         import hashlib
-        h = int(hashlib.md5(file_ref.path_or_uri.encode()).hexdigest(), 16)
+        fname = self._basename(file_ref.path_or_uri)
+        assigned_owner = self._owner_hints.get(fname)
+        
+        if not assigned_owner:
+            h = int(hashlib.md5(file_ref.path_or_uri.encode()).hexdigest(), 16)
+            assigned_owner = self._employee_ids[h % len(self._employee_ids)]
+            
         row = {
             "file_path": file_ref.path_or_uri,
-            "owner_employee_id": self._employee_ids[h % len(self._employee_ids)],
+            "owner_employee_id": assigned_owner,
             "size_bytes": file_ref.size_bytes,
             "file_hash": content_hash,
             "last_modified": self._parse_datetime(file_ref.last_modified),

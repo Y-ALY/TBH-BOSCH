@@ -125,17 +125,24 @@ def main() -> int:
     findings = db.query(Finding).count()
     db.close()
 
-    size_mb = dst.stat().st_size / (1024 * 1024)
-    print(f"\nDone: {dst.name} ({size_mb:.1f} MB)")
+    size_mb_uncompressed = dst.stat().st_size / (1024 * 1024)
+    print(f"\nCompressing cache... (uncompressed: {size_mb_uncompressed:.1f} MB)")
+    
+    import gzip
+    gz_dst = dst.with_name("bosch_gdpr.cache.db.gz")
+    with open(dst, "rb") as f_in:
+        with gzip.open(gz_dst, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+            
+    size_mb_compressed = gz_dst.stat().st_size / (1024 * 1024)
+
+    print(f"\nDone: {gz_dst.name} ({size_mb_compressed:.1f} MB)")
     print(f"  files={files}  findings={findings}")
     print("\nNext:")
-    print("  git add -f bosch_gdpr.cache.db")
-    print("  git commit -m 'Add prebuilt scan cache for Render'")
+    print("  git add -f bosch_gdpr.cache.db.gz")
+    print("  git commit -m 'Add prebuilt zipped cache for Render'")
     print("  git push")
     print("  Redeploy on Render → Restart service")
-    if size_mb > 90:
-        print("\nWARNING: cache.db is large for GitHub (>100MB limit).")
-        print("  Re-run with: python scripts/build_deploy_cache.py --max-files 5000")
     return 0
 
 

@@ -7,7 +7,7 @@ __pycache__/
 *.db
 *.sqlite3
 # Prebuilt scan for Render (generate with scripts/build_deploy_cache.py)
-!bosch_gdpr.cache.db
+!bosch_gdpr.cache.db.gz
 
 # Environment Variables (CRITICAL for your €100 API key later)
 .env
