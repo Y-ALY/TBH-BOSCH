@@ -81,6 +81,16 @@ def startup_event():
                 n = rewrite_strict_drive_paths(db)
                 if n:
                     print(f"Normalized {n} file paths for this server.")
+                    
+                # Clean up any residual empty accounts except the admin
+                try:
+                    from sqlalchemy import text
+                    res = db.execute(text("DELETE FROM employees WHERE employee_id NOT IN (SELECT DISTINCT owner_employee_id FROM files) AND employee_id != 'BX-17335'"))
+                    db.commit()
+                    if res.rowcount > 0:
+                        print(f"Cleaned up {res.rowcount} empty placeholder accounts.")
+                except Exception as e:
+                    print(f"Error cleaning up empty accounts: {e}")
             finally:
                 db.close()
         else:
